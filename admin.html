@@ -4100,31 +4100,94 @@ async function downloadResume(appId) {
 // 면접 채팅 (Realtime)
 // ══════════════════════════════════════════════════════
 let _chatChannel = null;
+let _chatPollTimer = null;      // Realtime이 막힐 때를 대비한 자동 새로고침
+let _chatSeenIds = new Set();   // 이미 화면에 뿌린 메시지 (중복 방지)
+let _chatCtx = null;            // { appId, col, round }
+let _chatRealtimeOk = false;    // 실시간 연결 성공 여부
 
 async function initChat(appId, isDispatch, round) {
-  // 기존 채널 정리
+  // 기존 채널/타이머 정리
   if (_chatChannel) {
     await sb.removeChannel(_chatChannel);
     _chatChannel = null;
   }
+  if (_chatPollTimer) { clearInterval(_chatPollTimer); _chatPollTimer = null; }
+
   const col = isDispatch ? 'dispatch_candidate_id' : 'application_id';
+  _chatCtx = { appId, col, round };
+  _chatSeenIds = new Set();
+
   // 기존 메시지 로드
   const { data: msgs } = await sb.from('interview_chats')
     .select('*').eq(col, appId).eq('interview_round', round)
     .order('created_at', { ascending: true });
+  (msgs || []).forEach(m => _chatSeenIds.add(m.id));
   renderChatMessages(msgs || []);
 
-  // Realtime 구독
-  _chatChannel = sb.channel(`chat:${appId}:${round}`)
+  // ① Realtime 구독
+  //    - broadcast: 보내는 쪽이 직접 쏘기 때문에 DB 설정과 무관하게 "즉시" 도착
+  //    - postgres_changes: DB에 들어온 변경 감지 (보조)
+  _chatChannel = sb.channel(`chat:${appId}:${round}`, { config: { broadcast: { self: false } } })
+    .on('broadcast', { event: 'chat' }, ({ payload }) => {
+      handleIncomingChat(payload, round);
+    })
     .on('postgres_changes', {
       event: 'INSERT',
       schema: 'public',
       table: 'interview_chats',
       filter: `${col}=eq.${appId}`
     }, payload => {
-      appendChatMsg(payload.new);
+      handleIncomingChat(payload.new, round);
     })
-    .subscribe();
+    .subscribe(status => {
+      // 실시간 연결이 살아있으면 자동 새로고침 주기를 늦추고,
+      // 연결이 실패하면 1초마다 가져와서 체감 지연을 줄인다.
+      const ok = (status === 'SUBSCRIBED');
+      _chatRealtimeOk = ok;
+      restartChatPolling(ok ? 8000 : 1000);
+    });
+
+  // ② 안전장치: 자동 새로고침 (연결 상태에 따라 주기 조절)
+  restartChatPolling(1000);
+}
+
+// 들어온 메시지 처리 (중복·다른 차수 걸러냄)
+function handleIncomingChat(m, round) {
+  if (!m || !m.id || _chatSeenIds.has(m.id)) return;
+  if ((m.interview_round || 1) !== round) return;
+  _chatSeenIds.add(m.id);
+  appendChatMsg(m);
+}
+
+function restartChatPolling(ms) {
+  if (_chatPollTimer) clearInterval(_chatPollTimer);
+  _chatPollTimer = setInterval(pollChatMessages, ms);
+}
+
+// 새 메시지만 조회해서 이어 붙임 (Realtime 실패 대비 안전장치)
+async function pollChatMessages() {
+  if (!_chatCtx) return;
+  const el = document.getElementById('ivChatMessages');
+  if (!el) return; // 채팅 화면이 닫혔으면 중단
+  try {
+    const { data } = await sb.from('interview_chats')
+      .select('*')
+      .eq(_chatCtx.col, _chatCtx.appId)
+      .eq('interview_round', _chatCtx.round)
+      .order('created_at', { ascending: true });
+    (data || []).forEach(m => {
+      if (_chatSeenIds.has(m.id)) return;
+      _chatSeenIds.add(m.id);
+      appendChatMsg(m);
+    });
+  } catch (e) { /* 조용히 무시하고 다음 주기에 재시도 */ }
+}
+
+// 채팅 화면을 벗어날 때 정리
+async function stopChat() {
+  if (_chatChannel) { await sb.removeChannel(_chatChannel); _chatChannel = null; }
+  if (_chatPollTimer) { clearInterval(_chatPollTimer); _chatPollTimer = null; }
+  _chatCtx = null;
 }
 
 function renderChatMessages(msgs) {
@@ -4164,13 +4227,26 @@ async function sendChatMsg() {
   if (!msg) return;
   input.value = '';
   const col = _ivSessionIsDispatch ? 'dispatch_candidate_id' : 'application_id';
-  await sb.from('interview_chats').insert({
+  const { data: inserted } = await sb.from('interview_chats').insert({
     [col]: _ivSessionAppId,
     interview_round: _ivSessionRound,
     admin_id: currentAdmin.id,
     admin_name: adminProfile?.name || currentAdmin.email.split('@')[0],
     message: msg
-  });
+  }).select().single();
+
+  // 내가 보낸 메시지는 즉시 화면에 표시 (기다리지 않음)
+  if (inserted && !_chatSeenIds.has(inserted.id)) {
+    _chatSeenIds.add(inserted.id);
+    appendChatMsg(inserted);
+  }
+
+  // 상대방에게 즉시 전달 (DB 감지를 기다리지 않고 바로 쏴줌)
+  if (inserted && _chatChannel) {
+    try {
+      await _chatChannel.send({ type: 'broadcast', event: 'chat', payload: inserted });
+    } catch (e) { /* 실패해도 자동 새로고침이 받아줌 */ }
+  }
 }
 
 // ══════════════════════════════════════════════════════
