@@ -1800,6 +1800,24 @@ function renderPipeline() {
   updateStats();
 }
 
+// ── 평가표 작성 여부 확인 (합격/불합격 가드) ─────────────
+// 면접 단계에서는 평가표(interview_evaluations)를 먼저 작성해야 합격/불합격 처리 가능
+async function getMyEvaluation(appId, round) {
+  const { data } = await sb.from('interview_evaluations').select('id')
+    .eq('application_id', appId)
+    .eq('interview_round', round)
+    .eq('admin_id', currentAdmin.id)
+    .maybeSingle();
+  return data || null;
+}
+async function hasAnyEvaluation(appId, round) {
+  const { data } = await sb.from('interview_evaluations').select('id')
+    .eq('application_id', appId)
+    .eq('interview_round', round)
+    .limit(1);
+  return !!(data && data.length);
+}
+
 // ── 합격/불합격 처리 ─────────────────────────────────────
 async function passApplicant() {
   const app = allApps.find(a => a.id === currentAppId);
@@ -1898,6 +1916,13 @@ async function handleInterviewApproval(appId, app) {
   const iAmInterviewer = interviewers.some(i => i.admin_id === myId);
 
   if (iAmInterviewer && !approvedIds.includes(myId)) {
+    // ★ 평가표 미작성 시 승인(합격) 불가
+    const myEval = await getMyEvaluation(appId, 1);
+    if (!myEval) {
+      showToast('⚠️ 면접 평가표를 먼저 작성해야 합격 처리할 수 있습니다');
+      alert('1차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 합격 처리해 주세요.');
+      return;
+    }
     // 내 승인 추가
     await sb.from('interview_approvals').insert({ application_id: appId, admin_id: myId });
     approvedIds.push(myId);
@@ -1979,6 +2004,13 @@ async function handleInterviewApproval2nd(appId, app) {
   const iAmInterviewer = interviewers.some(i => i.admin_id === myId);
 
   if (iAmInterviewer && !approvedIds.includes(myId)) {
+    // ★ 평가표 미작성 시 승인(합격) 불가
+    const myEval2 = await getMyEvaluation(appId, 2);
+    if (!myEval2) {
+      showToast('⚠️ 면접 평가표를 먼저 작성해야 합격 처리할 수 있습니다');
+      alert('2차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 합격 처리해 주세요.');
+      return;
+    }
     await sb.from('interview_approvals_2nd').insert({ application_id: appId, admin_id: myId });
     approvedIds.push(myId);
     window._cachedApprovals2nd = [...(window._cachedApprovals2nd||[]),
@@ -2020,6 +2052,32 @@ async function handleInterviewApproval2nd(appId, app) {
 }
 
 async function failApplicant() {
+  // ★ 면접 단계에서는 평가표 작성 후에만 불합격 처리 가능
+  //   - 내가 그 라운드 면접관이면: 내 평가표 필수
+  //   - 면접관이 아니면(관리자): 해당 라운드 평가표가 최소 1건 있어야 함
+  const app = allApps.find(a => a.id === currentAppId);
+  const stage = app?.stage;
+  if (app && (stage === '1차면접' || stage === '2차면접')) {
+    const round = stage === '2차면접' ? 2 : 1;
+    const ivTable = round === 2 ? 'job_interviewers_2nd' : 'job_interviewers';
+    const { data: ivs } = await sb.from(ivTable).select('admin_id').eq('job_id', app.job_posting_id);
+    const iAmInterviewer = (ivs || []).some(i => i.admin_id === currentAdmin.id);
+    if (iAmInterviewer) {
+      const myEval = await getMyEvaluation(currentAppId, round);
+      if (!myEval) {
+        showToast('⚠️ 면접 평가표를 먼저 작성해야 불합격 처리할 수 있습니다');
+        alert(`${round}차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 불합격 처리해 주세요.`);
+        return;
+      }
+    } else {
+      const anyEval = await hasAnyEvaluation(currentAppId, round);
+      if (!anyEval) {
+        showToast('⚠️ 면접 평가표가 1건도 없어 불합격 처리할 수 없습니다');
+        alert(`${round}차 면접 평가표가 아직 1건도 작성되지 않았습니다.\n\n면접관이 평가표를 작성한 뒤 불합격 처리해 주세요.`);
+        return;
+      }
+    }
+  }
   showConfirm('불합격 처리', '이 지원자를 불합격 처리하시겠습니까?', async (yes) => {
     if (!yes) return;
     await updateStageById(currentAppId, '불합격');
