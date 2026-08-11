@@ -245,6 +245,27 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
   const { createClient } = supabase;
   // 지원자 세션은 관리자 페이지(admin.html)와 분리된 저장소 사용 → 서로 자동 로그인 방지
   const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storageKey: 'ats-applicant-auth' } });
+
+  // ── applicant-files 접근 헬퍼 (Private 버킷 + Signed URL 전환용) ──────────
+  // DB에는 "파일 경로"만 저장하고, 화면에 보여줄 때마다 임시 열람 URL(Signed URL)을 발급한다.
+  // 과거 데이터(공개 URL 전체가 저장된 경우)도 경로를 추출해 그대로 호환 처리한다.
+  function afPath(v) {
+    if (!v) return null;
+    const s = String(v);
+    const m = s.match(/applicant-files\/(.+)$/);      // 구버전: 공개 URL 전체 저장 → 경로 추출
+    if (m) { try { return decodeURIComponent(m[1]); } catch(e) { return m[1]; } }
+    return /^https?:\/\//.test(s) ? null : s;          // 신버전: 경로만 저장
+  }
+  async function afUrl(v) {
+    const p = afPath(v);
+    if (!p) return v || null;
+    try {
+      const { data, error } = await sb.storage.from('applicant-files').createSignedUrl(p, 3600); // 1시간 유효
+      if (!error && data?.signedUrl) return data.signedUrl;
+    } catch(e) {}
+    // Signed URL 발급 실패 시(버킷이 아직 Public인 전환 과도기) 공개 URL로 폴백
+    return sb.storage.from('applicant-files').getPublicUrl(p).data.publicUrl;
+  }
 </script>
 
 <div class="top-progress" id="topProgress" style="width:0%"></div>
@@ -1330,12 +1351,15 @@ async function _showFormInner() {
       hobby:app.hobby||'', specialty:app.specialty||''
     };
     skills = [...(app.skills||[])];
-    // 기존 증명사진 미리보기 복원
+    // 기존 증명사진 미리보기 복원 (경로 → Signed URL 발급 후 표시)
     if (app.photo_url) {
-      setTimeout(() => {
-        const p = document.getElementById('photoPreview');
-        if (p) p.innerHTML = `<img src="${app.photo_url}" alt="증명사진" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
-      }, 100);
+      afUrl(app.photo_url).then(u => {
+        if (!u) return;
+        setTimeout(() => {
+          const p = document.getElementById('photoPreview');
+          if (p) p.innerHTML = `<img src="${u}" alt="증명사진" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+        }, 100);
+      });
     }
     fd.essay = {
       q1:app.essay_growth||app.essay_motivation, q2:app.essay_strength,
@@ -1932,8 +1956,7 @@ async function uploadPortfolioFile(input) {
     const path = `portfolios/${currentUser.id}_${Date.now()}.${ext}`;
     const { error } = await sb.storage.from('applicant-files').upload(path, file, { upsert: true });
     if (error) { document.getElementById('pfFN').textContent = '업로드 실패: ' + error.message; return; }
-    const { data } = sb.storage.from('applicant-files').getPublicUrl(path);
-    fd.extra.portfolioFileUrl = data.publicUrl;
+    fd.extra.portfolioFileUrl = path; // 공개 URL 대신 파일 경로만 저장 (열람 시 Signed URL 발급)
     document.getElementById('pfFN').textContent = file.name + ' ✓';
   } catch(e) {
     document.getElementById('pfFN').textContent = '업로드 실패';
@@ -2015,8 +2038,7 @@ async function previewPhoto(input){
     const path = `photos/${currentUser.id}_${Date.now()}.jpg`;
     const { error } = await sb.storage.from('applicant-files').upload(path, compressedBlob, { upsert: true, contentType: 'image/jpeg' });
     if (!error) {
-      const { data } = sb.storage.from('applicant-files').getPublicUrl(path);
-      fd.basic.photoUrl = data.publicUrl;
+      fd.basic.photoUrl = path; // 공개 URL 대신 파일 경로만 저장 (열람 시 Signed URL 발급)
     } else {
       showToast('사진 업로드 실패: ' + error.message);
     }

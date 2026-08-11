@@ -518,6 +518,27 @@ const SUPABASE_KEY = 'sb_publishable_rxoD0FpAJ_fonVDTCZAfgg_jGZnMLQu';
 const { createClient } = supabase;
 // 관리자 세션은 지원자 페이지(index.html)와 분리된 저장소 사용 → 서로 자동 로그인 방지
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storageKey: 'ats-admin-auth' } });
+
+// ── applicant-files 접근 헬퍼 (Private 버킷 + Signed URL 전환용) ──────────
+// DB에는 "파일 경로"만 저장되며, 화면에 보여줄 때마다 임시 열람 URL(Signed URL)을 발급한다.
+// 과거 데이터(공개 URL 전체가 저장된 경우)도 경로를 추출해 그대로 호환 처리한다.
+function afPath(v) {
+  if (!v) return null;
+  const s = String(v);
+  const m = s.match(/applicant-files\/(.+)$/);      // 구버전: 공개 URL 전체 저장 → 경로 추출
+  if (m) { try { return decodeURIComponent(m[1]); } catch(e) { return m[1]; } }
+  return /^https?:\/\//.test(s) ? null : s;          // 신버전: 경로만 저장
+}
+async function afUrl(v) {
+  const p = afPath(v);
+  if (!p) return v || null;
+  try {
+    const { data, error } = await sb.storage.from('applicant-files').createSignedUrl(p, 3600); // 1시간 유효
+    if (!error && data?.signedUrl) return data.signedUrl;
+  } catch(e) {}
+  // Signed URL 발급 실패 시(버킷이 아직 Public인 전환 과도기) 공개 URL로 폴백
+  return sb.storage.from('applicant-files').getPublicUrl(p).data.publicUrl;
+}
 </script>
 
 <!-- 로그인 -->
@@ -2159,8 +2180,9 @@ async function openModal(id) {
   document.getElementById('mEmail2').textContent = app.email||'';
   document.getElementById('mSubNum').textContent = app.submission_number||'-';
   const avatarEl = document.getElementById('mAvatar');
-  if (app.photo_url) {
-    avatarEl.innerHTML = `<img src="${app.photo_url}" style="width:104px;height:104px;border-radius:50%;object-fit:cover">`;
+  const _mPhotoUrl = app.photo_url ? await afUrl(app.photo_url) : null;
+  if (_mPhotoUrl) {
+    avatarEl.innerHTML = `<img src="${_mPhotoUrl}" style="width:104px;height:104px;border-radius:50%;object-fit:cover">`;
     avatarEl.style.cssText = 'flex-shrink:0';
   } else {
     avatarEl.textContent = (app.name||'?').slice(0,2);
@@ -2195,8 +2217,8 @@ async function openModal(id) {
   document.getElementById('mSkills').innerHTML=(app.skills||[]).map(s=>`<span class="skill-tag">${s}</span>`).join('')||'<span style="font-size:13px;color:var(--text3)">없음</span>';
   const links=[['GitHub',app.link_github],['LinkedIn',app.link_linkedin],['블로그',app.link_blog],['포트폴리오 URL',app.link_portfolio]].filter(([,v])=>v);
   const fileLinks = [];
-  if (app.portfolio_file_url) fileLinks.push(['포트폴리오 파일', app.portfolio_file_url]);
-  if (app.resume_file_url) fileLinks.push(['이력서 파일', app.resume_file_url]);
+  if (app.portfolio_file_url) fileLinks.push(['포트폴리오 파일', await afUrl(app.portfolio_file_url)]);
+  if (app.resume_file_url) fileLinks.push(['이력서 파일', await afUrl(app.resume_file_url)]);
   const allLinks = [...links, ...fileLinks];
   document.getElementById('mLinks').innerHTML=allLinks.map(([l,v])=>`<div class="info-item"><div class="label">${l}</div><div class="val"><a href="${v}" target="_blank" style="color:var(--b600)">🔗 보기</a></div></div>`).join('')||'<div style="font-size:13px;color:var(--text3)">없음</div>';
   const [{data:edus},{data:careers}]=await Promise.all([sb.from('education').select('*').eq('application_id',id).order('sort_order'),sb.from('work_experience').select('*').eq('application_id',id).order('sort_order')]);
@@ -2702,15 +2724,11 @@ function toggleSelectAll(cb) {
 async function deleteAppStorageFiles(app) {
   try {
     const toDelete = [];
-    if (app?.photo_url) {
-      // URL에서 파일 경로 추출
-      const match = app.photo_url.match(/applicant-files\/(.+)$/);
-      if (match) toDelete.push(match[1]);
-    }
-    if (app?.portfolio_file_url) {
-      const match = app.portfolio_file_url.match(/applicant-files\/(.+)$/);
-      if (match) toDelete.push(match[1]);
-    }
+    // 경로 저장(신버전)·공개 URL 저장(구버전) 모두 처리
+    const p1 = afPath(app?.photo_url);
+    if (p1) toDelete.push(p1);
+    const p2 = afPath(app?.portfolio_file_url);
+    if (p2) toDelete.push(p2);
     if (toDelete.length) {
       await sb.storage.from('applicant-files').remove(toDelete);
     }
@@ -4630,8 +4648,9 @@ async function renderInterviewSession(app) {
   };
   const totalCareerIv = calcTotalCareerIv(careers);
 
-  const photoHtml = app.photo_url
-    ? `<img src="${app.photo_url}" style="width:80px;height:100px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0">`
+  const _ivPhotoUrl = app.photo_url ? await afUrl(app.photo_url) : null;
+  const photoHtml = _ivPhotoUrl
+    ? `<img src="${_ivPhotoUrl}" style="width:80px;height:100px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0">`
     : `<div style="width:80px;height:100px;background:var(--surface2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--text3);flex-shrink:0">👤</div>`;
 
   c.innerHTML = `
