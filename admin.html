@@ -5103,7 +5103,7 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
               ${s.slot_location?`<div class="slot-location">📍 ${s.slot_location}</div>`:''}
               ${selectedSlot?.slot_id===s.id?'<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:2px">✓ 지원자 선택</div>':''}
             </div>
-            ${isSuperAdmin&&!_selDone?`<button class="btn btn-sm btn-danger" onclick="removeSlot('${s.id}')">삭제</button>`:''}
+            ${isSuperAdmin&&!_selDone?`<div style="display:flex;gap:4px;flex-shrink:0"><button class="btn btn-sm" onclick="editSlotLocation('${s.id}')">📍 장소</button><button class="btn btn-sm btn-danger" onclick="removeSlot('${s.id}')">삭제</button></div>`:''}
           </div>
         </div>`).join('')}
       ${isSuperAdmin&&!_selDone?`
@@ -5154,6 +5154,7 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
                 ${conflictWith
                   ? `<button class="btn btn-sm" disabled style="opacity:.4;cursor:not-allowed">확정 불가</button>`
                   : `<button class="btn btn-sm" onclick="confirmSlot('${s.id}')">확정</button>`}
+                <button class="btn btn-sm" onclick="editSlotLocation('${s.id}')">📍 장소</button>
                 <button class="btn btn-sm btn-danger" onclick="removeSlot('${s.id}')">삭제</button>
               </div>
             </div>`;
@@ -5468,6 +5469,18 @@ async function confirmSlot(slotId) {
   }
   await sb.from('interview_slots').update({ is_confirmed: true }).eq('id', slotId);
   showToast('✓ 후보 시간 확정');
+  await loadSchedulePanel();
+}
+
+// 슬롯 장소 수정 (지원자가 아직 확정하지 않은 경우)
+async function editSlotLocation(slotId) {
+  const slot = _schedSlots.find(s => s.id === slotId);
+  if (!slot) return;
+  const val = prompt('면접 장소를 입력하세요 (비우면 장소 삭제)', slot.slot_location || _schedDefaultLoc());
+  if (val === null) return; // 취소
+  const { error } = await sb.from('interview_slots').update({ slot_location: val.trim() }).eq('id', slotId);
+  if (error) { showToast('오류: ' + error.message); return; }
+  showToast('✓ 장소가 수정되었습니다');
   await loadSchedulePanel();
 }
 
