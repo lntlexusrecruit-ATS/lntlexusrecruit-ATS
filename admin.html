@@ -5156,7 +5156,26 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
       </div>
     </div>` : '';
 
-  body.innerHTML = finalSection + confirmedSection + overlapSection + addSlotSection + myAvailSection;
+  // ── 발송된 선택 링크 다시 보기 (아직 응답 전인 경우) ──
+  let linkSection = '';
+  const _pendingSel = selectedSlot && !selectedSlot.slot_id && !selectedSlot.response_type && selectedSlot.token;
+  if (_pendingSel && isSuperAdmin) {
+    const _baseUrl = window.location.href.replace(/[^/]*$/, '');
+    const _selUrl = `${_baseUrl}schedule-select.html?token=${selectedSlot.token}`;
+    const _exp = selectedSlot.expires_at ? new Date(selectedSlot.expires_at) : null;
+    const _expired = _exp && _exp < new Date();
+    linkSection = `
+    <div style="padding:12px 14px;background:var(--surface2);border:1px dashed var(--border2);border-radius:var(--rsm);margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:700;color:#534AB7">🔗 지원자에게 발송된 선택 링크</span>
+        <span style="font-size:11px;color:${_expired ? '#A32D2D' : 'var(--text3)'}">${_exp ? (_expired ? '⛔ 만료됨 — 재발송 필요' : '⏱ ' + _exp.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' 까지 유효') : ''}</span>
+      </div>
+      <div style="font-size:11px;word-break:break-all;color:#534AB7;cursor:pointer" title="클릭하면 복사됩니다" onclick="navigator.clipboard.writeText('${_selUrl}');showToast('✓ 링크 복사됨')">${_selUrl}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">클릭하면 복사됩니다 · 재발송하면 이 링크는 무효화되고 새 링크가 만들어집니다</div>
+    </div>`;
+  }
+
+  body.innerHTML = finalSection + linkSection + confirmedSection + overlapSection + addSlotSection + myAvailSection;
   if (!body.innerHTML.trim()) body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px">면접 일정 패널<br>날짜/시간을 추가하세요</div>';
 }
 
