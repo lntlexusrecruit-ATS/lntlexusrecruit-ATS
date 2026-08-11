@@ -5032,14 +5032,29 @@ async function loadSchedulePanel() {
     : { data: null };
   const canInputAvail = isInterviewer || !!myJobPerm || isSuperAdmin;
 
-  // ── A. 지원자 선택 완료 표시 ─────────────────────────
-  const finalSection = selectedSlot ? `
+  // ── A. 지원자 응답 표시 (시간확정 / 참석불가 / 미참석) ─
+  const _selDone = !!(selectedSlot && selectedSlot.slot_id); // 실제로 시간을 골라 확정한 경우만
+  const finalSection = _selDone ? `
     <div style="padding:14px;background:#EEEDFE;border-radius:var(--rsm);margin-bottom:16px;text-align:center">
       <div style="font-size:12px;color:#534AB7;font-weight:700;margin-bottom:4px">🎉 지원자 확정 완료</div>
       <div style="font-size:15px;font-weight:700;color:#1a1a1a">${formatSlotDate(selectedSlot.interview_slots?.slot_date)}</div>
       <div style="font-size:14px;color:#534AB7;font-weight:600">${formatSlotTime(selectedSlot.interview_slots?.slot_time)}</div>
       ${selectedSlot.interview_slots?.slot_location?`<div style="font-size:12px;color:#444;margin-top:4px">📍 ${selectedSlot.interview_slots.slot_location}</div>`:''}
-    </div>` : '';
+    </div>`
+  : (selectedSlot && selectedSlot.response_type === 'unavailable') ? `
+    <div style="padding:14px;background:#FEF3E2;border-radius:var(--rsm);margin-bottom:16px">
+      <div style="font-size:12px;color:#B25C00;font-weight:700;margin-bottom:6px">⚠️ 참석 불가 응답 — 제시된 일정에 참석할 수 없음</div>
+      <div style="font-size:13px;color:#1a1a1a;line-height:1.6;white-space:pre-line"><b>지원자가 남긴 가능 일정:</b>
+${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
+      <div style="font-size:11px;color:#8A6A30;margin-top:8px">위 일정을 참고해 새 후보 시간을 확정하고 다시 발송해 주세요.</div>
+    </div>`
+  : (selectedSlot && selectedSlot.response_type === 'declined') ? `
+    <div style="padding:14px;background:#FCEBEB;border-radius:var(--rsm);margin-bottom:16px">
+      <div style="font-size:12px;color:#A32D2D;font-weight:700;margin-bottom:6px">❌ 미참석 응답 — 면접에 참석하지 않음</div>
+      <div style="font-size:13px;color:#1a1a1a">사유: <b>${selectedSlot.decline_reason || '-'}</b>${selectedSlot.decline_detail ? ' — ' + String(selectedSlot.decline_detail).replace(/</g,'&lt;') : ''}</div>
+      <div style="font-size:11px;color:#A32D2D;margin-top:8px">필요 시 불합격 처리 또는 개별 연락을 진행해 주세요.</div>
+    </div>`
+  : '';
 
   // ── B. 확정 후보 슬롯 표시 ───────────────────────────
   const confirmedSection = confirmed.length ? `
@@ -5053,10 +5068,10 @@ async function loadSchedulePanel() {
               ${s.slot_location?`<div class="slot-location">📍 ${s.slot_location}</div>`:''}
               ${selectedSlot?.slot_id===s.id?'<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:2px">✓ 지원자 선택</div>':''}
             </div>
-            ${isSuperAdmin&&!selectedSlot?`<button class="btn btn-sm btn-danger" onclick="removeSlot('${s.id}')">삭제</button>`:''}
+            ${isSuperAdmin&&!_selDone?`<button class="btn btn-sm btn-danger" onclick="removeSlot('${s.id}')">삭제</button>`:''}
           </div>
         </div>`).join('')}
-      ${isSuperAdmin&&!selectedSlot?`
+      ${isSuperAdmin&&!_selDone?`
         <button class="btn btn-primary btn-sm" style="width:100%;margin-top:6px;padding:10px" onclick="sendScheduleEmail()">
           📧 지원자에게 발송 (선택 링크 전송)
         </button>`:''}
@@ -5449,7 +5464,14 @@ async function sendScheduleEmail() {
   // 기존 선택 레코드 있으면 업데이트, 없으면 삽입
   const { data: existing } = await sb.from('interview_selections').select('id').eq(col, _schedAppId).maybeSingle();
   if (existing) {
-    await sb.from('interview_selections').update({ token, slot_id: null, expires_at: expiresAt, selected_at: null, interview_round: _schedRound }).eq('id', existing.id);
+    // 재발송 시 이전 응답(참석불가/미참석) 초기화
+    const base = { token, slot_id: null, expires_at: expiresAt, selected_at: null, interview_round: _schedRound };
+    const { error: upErr } = await sb.from('interview_selections')
+      .update({ ...base, response_type: null, decline_reason: null, decline_detail: null, available_dates: null, responded_at: null })
+      .eq('id', existing.id);
+    if (upErr) { // 응답 컬럼이 아직 없는 DB와 호환 (컬럼 추가 SQL 실행 전)
+      await sb.from('interview_selections').update(base).eq('id', existing.id);
+    }
   } else {
     await sb.from('interview_selections').insert({ [col]: _schedAppId, token, expires_at: expiresAt, interview_round: _schedRound });
   }
