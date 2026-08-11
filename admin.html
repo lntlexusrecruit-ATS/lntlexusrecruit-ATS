@@ -935,6 +935,10 @@ async function afUrl(v) {
       <div class="field"><label>고용 형태</label><select id="jType"><option>정규직</option><option>계약직</option><option>인턴십</option><option>파트타임</option></select></div>
       <div class="field"><label>상태</label><select id="jActive"><option value="true">모집중</option><option value="false">마감</option></select></div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field"><label>1차 면접 장소 <span style="font-size:11px;font-weight:400;color:var(--text3)">(일정 생성 시 자동 입력)</span></label><input type="text" id="jIvLoc1" placeholder="예: 본사 2층 회의실A"></div>
+      <div class="field"><label>2차 면접 장소 <span style="font-size:11px;font-weight:400;color:var(--text3)">(일정 생성 시 자동 입력)</span></label><input type="text" id="jIvLoc2" placeholder="예: 본사 5층 임원회의실"></div>
+    </div>
     <div class="field"><label>직무 설명</label><textarea id="jDesc" rows="3" placeholder="담당 업무를 입력하세요"></textarea></div>
     <div class="field"><label>자격 요건</label><textarea id="jReq" rows="3" placeholder="필요한 역량/경험을 입력하세요"></textarea></div>
     <div class="field">
@@ -1516,9 +1520,11 @@ async function openJobForm(jobId = null) {
       document.getElementById('jActive').value = String(j.is_active);
       document.getElementById('jDesc').value = j.description||'';
       document.getElementById('jReq').value = j.requirements||'';
+      document.getElementById('jIvLoc1').value = j.interview_location_1st||'';
+      document.getElementById('jIvLoc2').value = j.interview_location_2nd||'';
     }
   } else {
-    ['jTitle','jDept','jLocation','jDesc','jReq'].forEach(id => document.getElementById(id).value = '');
+    ['jTitle','jDept','jLocation','jDesc','jReq','jIvLoc1','jIvLoc2'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('jType').value = '정규직';
     document.getElementById('jActive').value = 'true';
   }
@@ -1562,7 +1568,7 @@ function closeJobForm() { document.getElementById('jobFormModal').classList.add(
 async function saveJob() {
   const title = document.getElementById('jTitle').value.trim();
   if (!title) { showToast('공고 제목을 입력하세요'); return; }
-  const payload = { title, department: document.getElementById('jDept').value, location: document.getElementById('jLocation').value, employment_type: document.getElementById('jType').value, is_active: document.getElementById('jActive').value === 'true', description: document.getElementById('jDesc').value, requirements: document.getElementById('jReq').value, updated_at: new Date().toISOString() };
+  const payload = { title, department: document.getElementById('jDept').value, location: document.getElementById('jLocation').value, employment_type: document.getElementById('jType').value, is_active: document.getElementById('jActive').value === 'true', description: document.getElementById('jDesc').value, requirements: document.getElementById('jReq').value, interview_location_1st: document.getElementById('jIvLoc1').value.trim(), interview_location_2nd: document.getElementById('jIvLoc2').value.trim(), updated_at: new Date().toISOString() };
   let jobId = editJobId;
   if (editJobId) {
     const { error } = await sb.from('job_postings').update(payload).eq('id', editJobId);
@@ -4931,6 +4937,8 @@ let _schedSelectedDates = new Set(); // 다중 날짜 선택
 let _schedSlots = [], _schedAvailability = [];
 let _schedBlockedTimes = new Map(); // 면접관 일정 충돌 시간대
 let _schedAppName = '', _schedJobTitle = '';
+let _schedJobLoc = { 1:'', 2:'' }; // 공고에 설정된 1차/2차 면접 장소 (슬롯 생성 시 기본값)
+function _schedDefaultLoc() { return (_schedJobLoc && _schedJobLoc[_schedRound]) || ''; }
 
 async function openSchedulePanel(id, app, isDispatch) {
   _schedAppId = id;
@@ -4940,6 +4948,14 @@ async function openSchedulePanel(id, app, isDispatch) {
   _schedCalYear = null; _schedCalMonth = null;
   _schedAppName = app.name || '-';
   _schedJobTitle = isDispatch ? '파견직' : (app.job_postings?.title || '-');
+  // 공고에 설정된 면접 장소 로드
+  _schedJobLoc = { 1:'', 2:'' };
+  if (!isDispatch && app.job_posting_id) {
+    try {
+      const { data: jp } = await sb.from('job_postings').select('interview_location_1st, interview_location_2nd').eq('id', app.job_posting_id).maybeSingle();
+      if (jp) _schedJobLoc = { 1: jp.interview_location_1st||'', 2: jp.interview_location_2nd||'' };
+    } catch(e) {}
+  }
   const panel = document.getElementById('schedulePanel');
   panel.style.display = 'flex';
   document.getElementById('schedulePanelSub').textContent = _schedAppName + ' · ' + _schedJobTitle;
@@ -5118,7 +5134,7 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
                 <span style="font-size:11px;white-space:nowrap;color:#333">~ 종료</span>
                 <input type="time" id="slotEnd_${i}" value="11:00" style="flex:1;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px">
               </div>
-              <input type="text" id="slotLoc_${i}" placeholder="장소 (예: 본사 2층 회의실A)" style="width:100%;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;box-sizing:border-box">
+              <input type="text" id="slotLoc_${i}" value="${_schedDefaultLoc().replace(/"/g,'&quot;')}" placeholder="장소 (예: 본사 2층 회의실A)" style="width:100%;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;box-sizing:border-box">
             </div>`).join('')}
           <button class="btn btn-primary btn-sm" style="width:100%;margin-top:4px" onclick="addSlotsByDate()">+ ${_schedSelectedDates.size}개 날짜 추가</button>
         </div>` : `<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px">캘린더에서 날짜를 클릭하세요 (여러 개 가능)</div>`}
@@ -5337,7 +5353,7 @@ async function addSlotsByDate() {
   dates.forEach((date, i) => {
     const startStr = document.getElementById(`slotStart_${i}`)?.value || '10:00';
     const endStr = document.getElementById(`slotEnd_${i}`)?.value || null;
-    const loc = document.getElementById(`slotLoc_${i}`)?.value || '';
+    const loc = document.getElementById(`slotLoc_${i}`)?.value ?? _schedDefaultLoc();
     if (endStr) {
       // 1시간 단위로 쪼개서 각각 row 생성
       const startMin = getMin(startStr);
@@ -5421,7 +5437,7 @@ async function quickAddSlot(date) {
         rows.push({
           [col]: _schedAppId, interview_round: _schedRound,
           slot_date: date, slot_time: toStr(t), slot_time_end: toStr(t+60),
-          created_by: currentAdmin.id
+          slot_location: _schedDefaultLoc(), created_by: currentAdmin.id
         });
       }
     });
@@ -5430,7 +5446,7 @@ async function quickAddSlot(date) {
     rows.push({
       [col]: _schedAppId, interview_round: _schedRound,
       slot_date: date, slot_time: dayAvails[0]?.slot_time || '09:00',
-      slot_time_end: null, created_by: currentAdmin.id
+      slot_time_end: null, slot_location: _schedDefaultLoc(), created_by: currentAdmin.id
     });
   }
   const { error } = await sb.from('interview_slots').insert(rows);
