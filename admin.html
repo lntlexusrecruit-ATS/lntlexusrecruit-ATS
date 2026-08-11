@@ -5420,11 +5420,18 @@ async function addMyAvailabilities() {
       slot_date: date, slot_time: start, slot_time_end: end||null
     };
   });
+  let failed = 0, lastErr = null;
   for (const row of rows) {
-    await sb.from('interviewer_availability').upsert(row, { onConflict: `${col},admin_id,slot_date,slot_time` });
+    const { error } = await sb.from('interviewer_availability').upsert(row, { onConflict: `${col},admin_id,slot_date,slot_time` });
+    if (error) { failed++; lastErr = error; }
   }
   _schedSelectedDates.clear();
-  showToast(`✓ ${rows.length}개 가능시간 추가됨`);
+  if (failed) {
+    showToast(`⚠️ 가능시간 저장 실패 (${failed}건)`);
+    alert('가능시간 저장에 실패했습니다.\n\n오류: ' + (lastErr?.message || '알 수 없는 오류') + '\n\n관리자에게 문의해 주세요.');
+  } else {
+    showToast(`✓ ${rows.length}개 가능시간 추가됨`);
+  }
   await loadSchedulePanel();
 }
 
