@@ -179,13 +179,21 @@ const EMAILJS_SERVICE_ID = 'service_lntlexusrecruit';
 const EMAILJS_TEMPLATE_INTERVIEW = 'template_ju4wzpu';
 if (window.emailjs) emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
 
+// 이메일 발송용 성명 마스킹 (개인정보 국외이전 방지 — 해외 이메일 중계사 경유 시 실명 미포함)
+function maskName(n) {
+  n = String(n || '').trim();
+  if (n.length <= 1) return n || '지원자';
+  if (n.length === 2) return n[0] + '○';
+  return n[0] + '○'.repeat(n.length - 2) + n[n.length - 1];
+}
+
 async function sendInterviewerEmails(recipients, applicantName, jobTitle, round, dateStr, timeStr) {
   // 이메일 발송 (EmailJS는 공개키 기반이라 클라이언트 발송 유지)
   try {
     for (const r of (recipients || [])) {
       await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_INTERVIEW, {
         email: r.email, to_name: r.name || '담당자',
-        applicant_name: applicantName, job_title: jobTitle || '',
+        applicant_name: maskName(applicantName), job_title: jobTitle || '',
         interview_round: round, interview_date: dateStr, interview_time: timeStr
       });
     }

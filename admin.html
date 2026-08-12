@@ -1105,10 +1105,38 @@ let allStageHistory = [];
 let currentAppId = null, editJobId = null, editAdminId = null;
 let confirmCallback = null;
 
+// ── 자동 로그아웃 (60분 무활동 — 재방문 자동 로그인도 차단) ──────────
+const ADMIN_IDLE_LIMIT = 60 * 60 * 1000; // 60분
+const ADMIN_LASTACT_KEY = 'ats-admin-lastact';
+let _admLastSave = 0;
+function admTouch() {
+  const n = Date.now();
+  if (n - _admLastSave < 30000) return; // 30초에 1번만 기록
+  _admLastSave = n;
+  try { localStorage.setItem(ADMIN_LASTACT_KEY, String(n)); } catch(e) {}
+}
+function admStartIdleWatch() {
+  ['click','keydown','mousemove','scroll','touchstart'].forEach(ev => document.addEventListener(ev, admTouch, { passive: true }));
+  _admLastSave = 0; admTouch();
+  setInterval(async () => {
+    const last = parseInt(localStorage.getItem(ADMIN_LASTACT_KEY) || '0');
+    if (last && Date.now() - last > ADMIN_IDLE_LIMIT) {
+      try { await sb.auth.signOut(); } catch(e) {}
+      location.reload();
+    }
+  }, 60000);
+}
+
 // ── 초기화 ───────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   const { data:{ session } } = await sb.auth.getSession();
   if (session) {
+    // 마지막 활동 후 60분 초과 시 재방문이어도 자동 로그아웃 (외부/공용 PC 보호)
+    const _last = parseInt(localStorage.getItem(ADMIN_LASTACT_KEY) || '0');
+    if (!_last || Date.now() - _last > ADMIN_IDLE_LIMIT) {
+      await sb.auth.signOut();
+      return; // 로그인 화면 유지
+    }
     currentAdmin = session.user;
     await loadAdminProfile();
     // admin_profiles에 없으면 지원자 계정 → 강제 로그아웃
@@ -1147,7 +1175,7 @@ async function doLogin() {
   showApp();
 }
 
-async function doLogout() { await sb.auth.signOut(); location.reload(); }
+async function doLogout() { try { localStorage.removeItem(ADMIN_LASTACT_KEY); } catch(e) {} await sb.auth.signOut(); location.reload(); }
 function showErr(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
 
 // ── 앱 진입 ──────────────────────────────────────────────
@@ -1166,6 +1194,7 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 async function showApp() {
+  admStartIdleWatch(); // 60분 무활동 자동 로그아웃 시작
   document.getElementById('viewLogin').classList.add('hidden');
   document.getElementById('viewApp').classList.remove('hidden');
   const role = adminProfile?.role;
@@ -3938,6 +3967,15 @@ async function sendJandi(emails, body, info) {
   } catch(e) { console.log('잔디 발송 실패:', e); }
 }
 
+// 이메일 발송용 성명 마스킹 (개인정보 국외이전 방지 — 해외 이메일 중계사 경유 시 실명 미포함)
+// 예: 김지인 → 김○인, 김진 → 김○, John → J○○n / 상세 정보는 관리자 페이지·잔디(국내)에서 확인
+function maskName(n) {
+  n = String(n || '').trim();
+  if (n.length <= 1) return n || '지원자';
+  if (n.length === 2) return n[0] + '○';
+  return n[0] + '○'.repeat(n.length - 2) + n[n.length - 1];
+}
+
 // 검토 요청 알림 (관리자검토 단계 이동 시)
 async function notifyReviewRequired(jobId, applicantName, jobTitle) {
   try {
@@ -3957,7 +3995,7 @@ async function notifyReviewRequired(jobId, applicantName, jobTitle) {
     for (const [email, name] of recipients) {
       await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_REVIEW, {
         email, to_name: name || '담당자',
-        applicant_name: applicantName, job_title: jobTitle || ''
+        applicant_name: maskName(applicantName), job_title: jobTitle || ''
       });
     }
 
@@ -3986,7 +4024,7 @@ async function notifyInterviewConfirmed(jobId, applicantName, jobTitle, round, d
     for (const [email, name] of recipients) {
       await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_INTERVIEW, {
         email, to_name: name || '담당자',
-        applicant_name: applicantName, job_title: jobTitle || '',
+        applicant_name: maskName(applicantName), job_title: jobTitle || '',
         interview_round: round, interview_date: dateStr, interview_time: timeStr
       });
     }
