@@ -5172,7 +5172,7 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
                 <span style="font-size:11px;white-space:nowrap;color:#333">~ 종료</span>
                 <input type="time" id="slotEnd_${i}" value="11:00" style="flex:1;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px">
               </div>
-              <input type="text" id="slotLoc_${i}" value="${_schedDefaultLoc().replace(/"/g,'&quot;')}" placeholder="장소 (예: 본사 2층 회의실A)" style="width:100%;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;box-sizing:border-box">
+              <input type="text" id="slotLoc_${i}" value="${(_schedDateLoc(d) || _schedDefaultLoc()).replace(/"/g,'&quot;')}" placeholder="장소 (예: 본사 2층 회의실A)" style="width:100%;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;box-sizing:border-box">
             </div>`).join('')}
           <button class="btn btn-primary btn-sm" style="width:100%;margin-top:4px" onclick="addSlotsByDate()">+ ${_schedSelectedDates.size}개 날짜 추가</button>
         </div>` : `<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px">캘린더에서 날짜를 클릭하세요 (여러 개 가능)</div>`}
@@ -5218,13 +5218,18 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
                 <span style="font-size:11px;white-space:nowrap;color:#333">~</span>
                 <input type="time" id="availEnd_${i}" value="18:00" style="flex:1;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px">
               </div>
+              <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#333;cursor:pointer">
+                <input type="checkbox" id="availLocDefault_${i}" checked onchange="toggleAvailLoc(${i}, this.checked)" style="width:14px;height:14px;accent-color:var(--accent)">
+                공고 면접 장소에서 진행${_schedDefaultLoc() ? ` (${_schedDefaultLoc().replace(/</g,'&lt;')})` : ''}
+              </label>
+              <input type="text" id="availLoc_${i}" placeholder="이날 계신 장소 직접 입력 (예: 판교지점 3층)" style="display:none;width:100%;margin-top:6px;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;box-sizing:border-box">
             </div>`).join('')}
           <button class="btn btn-primary btn-sm" style="width:100%;margin-top:4px" onclick="addMyAvailabilities()">가능시간 추가</button>
         </div>` : `<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px">날짜를 클릭하세요 (여러 개 선택 가능)</div>`}
       <div style="margin-top:8px">
         ${_schedAvailability.filter(a=>a.admin_id===myId).map(a=>`
           <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border:0.5px solid var(--border);border-radius:var(--rxs);margin-bottom:4px;font-size:12px">
-            <span>${formatSlotDate(a.slot_date)} ${formatSlotTime(a.slot_time)}${a.slot_time_end?' ~ '+formatSlotTime(a.slot_time_end):''}</span>
+            <span>${formatSlotDate(a.slot_date)} ${formatSlotTime(a.slot_time)}${a.slot_time_end?' ~ '+formatSlotTime(a.slot_time_end):''}${a.location?` <span style="color:#B25C00">· 📍 ${a.location}</span>`:''}</span>
             <button class="btn btn-sm btn-danger" style="padding:2px 8px;font-size:11px" onclick="removeMyAvailability('${a.id}')">삭제</button>
           </div>`).join('')}
       </div>
@@ -5300,7 +5305,8 @@ function buildOverlapSection(allInterviewers) {
       const uniqueAdmins = [...new Set(avails.map(a => a.admin_id))];
       const names = uniqueAdmins.map(aid => {
         const iv = allInterviewers.find(i => i.admin_id === aid);
-        return iv?.admin_profiles?.name || '-';
+        const customLoc = avails.find(a => a.admin_id === aid && a.location)?.location;
+        return (iv?.admin_profiles?.name || '-') + (customLoc ? ` (📍${customLoc})` : '');
       });
       // 겹치는 시간대 계산 (교집합)
       const getMinutes = t => { if (!t) return null; const [h,m] = t.split(':').map(Number); return h*60+m; };
@@ -5392,7 +5398,7 @@ async function addSlotsByDate() {
   dates.forEach((date, i) => {
     const startStr = document.getElementById(`slotStart_${i}`)?.value || '10:00';
     const endStr = document.getElementById(`slotEnd_${i}`)?.value || null;
-    const loc = document.getElementById(`slotLoc_${i}`)?.value ?? _schedDefaultLoc();
+    const loc = document.getElementById(`slotLoc_${i}`)?.value ?? (_schedDateLoc(date) || _schedDefaultLoc());
     if (endStr) {
       // 1시간 단위로 쪼개서 각각 row 생성
       const startMin = getMin(startStr);
@@ -5476,7 +5482,7 @@ async function quickAddSlot(date) {
         rows.push({
           [col]: _schedAppId, interview_round: _schedRound,
           slot_date: date, slot_time: toStr(t), slot_time_end: toStr(t+60),
-          slot_location: _schedDefaultLoc(), created_by: currentAdmin.id
+          slot_location: _schedDateLoc(date) || _schedDefaultLoc(), created_by: currentAdmin.id
         });
       }
     });
@@ -5485,7 +5491,7 @@ async function quickAddSlot(date) {
     rows.push({
       [col]: _schedAppId, interview_round: _schedRound,
       slot_date: date, slot_time: dayAvails[0]?.slot_time || '09:00',
-      slot_time_end: null, slot_location: _schedDefaultLoc(), created_by: currentAdmin.id
+      slot_time_end: null, slot_location: _schedDateLoc(date) || _schedDefaultLoc(), created_by: currentAdmin.id
     });
   }
   const { error } = await sb.from('interview_slots').insert(rows);
@@ -5535,9 +5541,13 @@ async function addMyAvailabilities() {
   const rows = dates.map((date, i) => {
     const start = document.getElementById(`availStart_${i}`)?.value || '09:00';
     const end = document.getElementById(`availEnd_${i}`)?.value || null;
+    // 공고 장소 체크 해제 시에만 직접 입력 장소 저장 (체크 시 null = 공고 장소 사용)
+    const useDefault = document.getElementById(`availLocDefault_${i}`)?.checked !== false;
+    const customLoc = useDefault ? null : (document.getElementById(`availLoc_${i}`)?.value.trim() || null);
     return {
       [col]: _schedAppId, admin_id: currentAdmin.id,
-      slot_date: date, slot_time: start, slot_time_end: end||null
+      slot_date: date, slot_time: start, slot_time_end: end||null,
+      location: customLoc
     };
   });
   let failed = 0, lastErr = null;
@@ -5553,6 +5563,19 @@ async function addMyAvailabilities() {
     showToast(`✓ ${rows.length}개 가능시간 추가됨`);
   }
   await loadSchedulePanel();
+}
+
+// 가능시간 입력: 공고 장소 체크 해제 시 직접 입력칸 표시
+function toggleAvailLoc(i, useDefault) {
+  const el = document.getElementById(`availLoc_${i}`);
+  if (el) { el.style.display = useDefault ? 'none' : 'block'; if (!useDefault) el.focus(); }
+}
+
+// 해당 날짜에 면접관이 직접 지정한 장소 (없으면 '')
+// 여러 명이 서로 다른 장소를 적었으면 첫 번째 값 사용 — 슬롯 입력칸에서 관리자가 수정 가능
+function _schedDateLoc(date) {
+  const locs = [...new Set(_schedAvailability.filter(a => a.slot_date === date && a.location).map(a => a.location))];
+  return locs[0] || '';
 }
 
 async function removeMyAvailability(id) {
