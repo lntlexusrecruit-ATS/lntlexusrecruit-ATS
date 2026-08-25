@@ -539,6 +539,21 @@ async function afUrl(v) {
   // Signed URL 발급 실패 시(버킷이 아직 Public인 전환 과도기) 공개 URL로 폴백
   return sb.storage.from('applicant-files').getPublicUrl(p).data.publicUrl;
 }
+
+// ── XSS 방지: HTML 이스케이프 헬퍼 ──────────────────────
+// 지원자·외부에서 입력된 모든 문자열은 innerHTML에 넣기 전에 반드시 esc()를 거친다.
+// (지원자가 이름·자기소개 등에 <script> 등을 넣어 관리자 브라우저에서 실행되는 것을 차단)
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+const escapeHtml = esc; // 별칭
+// 지원자가 입력한 링크는 http/https만 허용 (javascript: 등 차단)
+function safeUrl(u) {
+  const s = String(u ?? '').trim();
+  return /^https?:\/\//i.test(s) ? esc(s) : '#';
+}
 </script>
 
 <!-- 로그인 -->
@@ -804,7 +819,7 @@ async function afUrl(v) {
         <div class="topbar">
           <div class="topbar-title">🗂 접속·열람 기록</div>
           <div style="display:flex;gap:8px;align-items:center">
-            <span style="font-size:11px;color:var(--text3)">개인정보보호법 안전성 확보조치에 따라 1년 이상 보관됩니다</span>
+            <span style="font-size:11px;color:var(--text3)">민감정보 처리 시스템으로서 개인정보의 안전성 확보조치 기준 제8조에 따라 2년 이상 보관됩니다</span>
             <button class="btn btn-sm" onclick="exportAuditCsv()">⬇ CSV 다운로드</button>
             <button class="btn btn-sm" onclick="loadAuditLog()">↻ 새로고침</button>
           </div>
@@ -1224,9 +1239,9 @@ async function loadAuditLog() {
         <tbody>
           ${window._auditRows.map(r=>`<tr>
             <td style="padding:8px 12px;border-bottom:0.5px solid var(--border);white-space:nowrap;color:var(--text3)">${new Date(r.created_at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
-            <td style="padding:8px 12px;border-bottom:0.5px solid var(--border);font-weight:500">${r.admin_name||'-'}</td>
-            <td style="padding:8px 12px;border-bottom:0.5px solid var(--border)">${r.action||'-'}</td>
-            <td style="padding:8px 12px;border-bottom:0.5px solid var(--border);color:var(--text2)">${r.target_name||'-'}</td>
+            <td style="padding:8px 12px;border-bottom:0.5px solid var(--border);font-weight:500">${esc(r.admin_name)||'-'}</td>
+            <td style="padding:8px 12px;border-bottom:0.5px solid var(--border)">${esc(r.action)||'-'}</td>
+            <td style="padding:8px 12px;border-bottom:0.5px solid var(--border);color:var(--text2)">${esc(r.target_name)||'-'}</td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -1446,8 +1461,8 @@ function jobTodoRowHtml(jobMeta, todos, isDispatch) {
 
   return `<div class="home-job-row">
     <div class="home-job-row-title">
-      <span class="home-job-row-name">${isDispatch ? '🚌 ' : ''}${jobMeta.title}</span>
-      <span class="home-job-row-dept">${jobMeta.department || ''}</span>
+      <span class="home-job-row-name">${isDispatch ? '🚌 ' : ''}${esc(jobMeta.title)}</span>
+      <span class="home-job-row-dept">${esc(jobMeta.department) || ''}</span>
     </div>
     <div class="home-job-row-stats">
       ${miniStat(reviewNeeded.length, '검토 필요', '#B25C00', '#FEF3E2', goPipeline)}
@@ -1579,31 +1594,31 @@ function renderJobs() {
       <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
         ${iv1.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:11px;font-weight:600;color:#3C3489;background:#EEEDFE;padding:2px 8px;border-radius:20px;white-space:nowrap">1차면접관</span>
-          ${iv1.map(n => `<span style="font-size:12px;color:var(--text2)">${n}</span>`).join('<span style="color:var(--border)">·</span>')}
+          ${iv1.map(n => `<span style="font-size:12px;color:var(--text2)">${esc(n)}</span>`).join('<span style="color:var(--border)">·</span>')}
         </div>` : ''}
         ${iv2.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:11px;font-weight:600;color:#0C447C;background:#E6F1FB;padding:2px 8px;border-radius:20px;white-space:nowrap">2차면접관</span>
-          ${iv2.map(n => `<span style="font-size:12px;color:var(--text2)">${n}</span>`).join('<span style="color:var(--border)">·</span>')}
+          ${iv2.map(n => `<span style="font-size:12px;color:var(--text2)">${esc(n)}</span>`).join('<span style="color:var(--border)">·</span>')}
         </div>` : ''}
       </div>` : '';
     return `
     <div class="job-card">
       <div style="width:8px;height:8px;border-radius:50%;background:${j.is_active?'#3B6D11':'#9E9C97'};margin-top:6px;flex-shrink:0"></div>
       <div class="job-card-info">
-        <div class="job-card-title">${j.title}</div>
+        <div class="job-card-title">${esc(j.title)}</div>
         <div class="job-card-meta">
-          <span>${j.department||'-'}</span><span>·</span><span>${j.location||'-'}</span>
-          <span>·</span><span>${j.employment_type||'-'}</span>
+          <span>${esc(j.department)||'-'}</span><span>·</span><span>${esc(j.location)||'-'}</span>
+          <span>·</span><span>${esc(j.employment_type)||'-'}</span>
           <span>·</span><span style="color:${j.is_active?'var(--g600)':'var(--text3)'};font-weight:500">${j.is_active?'모집중':'마감'}</span>
         </div>
-        ${j.requirements?`<div style="font-size:12px;color:var(--text3);margin-top:4px">${j.requirements}</div>`:''}
+        ${j.requirements?`<div style="font-size:12px;color:var(--text3);margin-top:4px">${esc(j.requirements)}</div>`:''}
         ${ivHtml}
       </div>
       ${isSuperAdmin ? `
       <div class="job-card-actions">
         <button class="btn btn-sm" onclick="openJobForm('${j.id}')">수정</button>
         <button class="btn btn-sm btn-danger" onclick="toggleJobActive('${j.id}',${j.is_active})">${j.is_active?'마감':'재개'}</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteJob('${j.id}','${j.title}')">삭제</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteJob('${j.id}')">삭제</button>
       </div>` : ''}
     </div>`;
   }).join('');
@@ -1645,8 +1660,8 @@ async function openJobForm(jobId = null) {
       ? eligibleManagers.map(a => `<label style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;font-size:13px;transition:background .12s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
           <input type="checkbox" name="${name}" value="${a.id}" ${existingIds.includes(a.id)?'checked':''} style="width:16px;height:16px;flex-shrink:0;cursor:pointer;accent-color:var(--accent)">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:500">${a.name}</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:1px">${a.department||'-'} · ${a.role==='superadmin'?'슈퍼어드민':'관리자'}</div>
+            <div style="font-weight:500">${esc(a.name)}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(a.department)||'-'} · ${a.role==='superadmin'?'슈퍼어드민':'관리자'}</div>
           </div>
         </label>`).join('')
       : '<div style="font-size:12px;color:var(--text3);padding:8px">공고에 배정된 관리자가 없습니다 (먼저 관리자 수정에서 공고를 배정하세요)</div>';
@@ -1700,7 +1715,8 @@ async function toggleJobActive(id, current) {
   await loadJobs(); showToast(current ? '공고 마감 처리' : '공고 재개');
 }
 
-async function deleteJob(id, title) {
+async function deleteJob(id) {
+  const title = (allJobs.find(x => x.id === id)?.title) || '해당';
   if (!confirm(`"${title}" 공고를 삭제하시겠습니까?`)) return;
   const { error } = await sb.from('job_postings').delete().eq('id', id);
   if (error) { showToast('삭제 실패: ' + error.message); return; }
@@ -1803,8 +1819,8 @@ async function loadDashboard() {
 
     return `<div class="job-dash-card" onclick="openJobPipeline('${j.id}')">
       <span class="job-dash-status" style="background:#EAF3DE;color:#27500A">모집중</span>
-      <div class="job-dash-card-title">${j.title}</div>
-      <div class="job-dash-card-dept">${j.department||''} ${j.location?'· '+j.location:''}</div>
+      <div class="job-dash-card-title">${esc(j.title)}</div>
+      <div class="job-dash-card-dept">${esc(j.department)||''} ${j.location?'· '+esc(j.location):''}</div>
       <div class="job-dash-card-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;width:100%">
         <div class="job-dash-stat" style="background:#F1EFE8">
           <div class="job-dash-stat-val" style="color:#5F5E5A">${newApps}</div>
@@ -1844,7 +1860,7 @@ function renderInterviewerBadgesSummary(jobId, jobApps, interviewers, allApprova
     const isMe = iv.admin_id === currentAdmin.id;
     const allDone = approvedCount >= interviewApps.length;
     return `<span class="iv-badge ${allDone ? 'ok' : isMe ? 'mine-pending' : 'pending'}">
-      ${allDone ? '✅' : isMe ? '⚠' : '⬜'} ${iv.admin_profiles?.name||'-'} ${approvedCount}/${interviewApps.length}
+      ${allDone ? '✅' : isMe ? '⚠' : '⬜'} ${esc(iv.admin_profiles?.name)||'-'} ${approvedCount}/${interviewApps.length}
     </span>`;
   }).join('');
 
@@ -1890,7 +1906,7 @@ function renderPipeline() {
                   jobIvs.map(iv => {
                     const ok = appApprovals.includes(iv.admin_id);
                     const isMe = iv.admin_id === currentAdmin.id;
-                    return `<span class="iv-badge ${ok?'ok':isMe?'mine-pending':'pending'}">${ok?'✅':isMe?'⚠':'⬜'} ${iv.admin_profiles?.name||'-'}</span>`;
+                    return `<span class="iv-badge ${ok?'ok':isMe?'mine-pending':'pending'}">${ok?'✅':isMe?'⚠':'⬜'} ${esc(iv.admin_profiles?.name)||'-'}</span>`;
                   }).join('')
                 }</div>`;
               }
@@ -1902,21 +1918,21 @@ function renderPipeline() {
                   jobIvs2nd.map(iv => {
                     const ok = appApprovals2nd.includes(iv.admin_id);
                     const isMe = iv.admin_id === currentAdmin.id;
-                    return `<span class="iv-badge ${ok?'ok':isMe?'mine-pending':'pending'}">${ok?'✅':isMe?'⚠':'⬜'} ${iv.admin_profiles?.name||'-'}</span>`;
+                    return `<span class="iv-badge ${ok?'ok':isMe?'mine-pending':'pending'}">${ok?'✅':isMe?'⚠':'⬜'} ${esc(iv.admin_profiles?.name)||'-'}</span>`;
                   }).join('')
                 }</div>`;
               }
             }
             return `<div class="app-card" onclick="openModal('${a.id}')">
               <div class="app-card-top">
-                <div class="app-card-avatar" style="background:${ac.bg};color:${ac.color}">${(a.name||'?').slice(0,2)}</div>
+                <div class="app-card-avatar" style="background:${ac.bg};color:${ac.color}">${esc((a.name||'?').slice(0,2))}</div>
                 <div>
-                  <div class="app-card-name">${a.name||'이름없음'}</div>
-                  <div class="app-card-role">${a.job_postings?.title||'-'}</div>
+                  <div class="app-card-name">${esc(a.name)||'이름없음'}</div>
+                  <div class="app-card-role">${esc(a.job_postings?.title)||'-'}</div>
                 </div>
               </div>
               <div class="app-card-meta">
-                ${(a.apply_source||[]).map(s=>`<span class="app-card-tag">${s}</span>`).join('')}
+                ${(a.apply_source||[]).map(s=>`<span class="app-card-tag">${esc(s)}</span>`).join('')}
               </div>
               ${ivBadges}
               <div class="app-card-date">${date}</div>
@@ -2071,7 +2087,7 @@ async function handleInterviewApproval(appId, app) {
     const ok = approvedIds.includes(i.admin_id);
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border)">
       <span style="font-size:16px">${ok ? '✅' : '⬜'}</span>
-      <span style="font-size:13px">${i.admin_profiles?.name || '-'}</span>
+      <span style="font-size:13px">${esc(i.admin_profiles?.name) || '-'}</span>
       <span style="font-size:11px;color:${ok?'var(--g600)':'var(--text3)'};margin-left:auto">${ok?'승인':'대기'}</span>
     </div>`;
   }).join('');
@@ -2154,7 +2170,7 @@ async function handleInterviewApproval2nd(appId, app) {
     const isMe = i.admin_id === myId;
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border)">
       <span style="font-size:16px">${ok?'✅':isMe?'⚠':'⬜'}</span>
-      <span style="font-size:13px">${i.admin_profiles?.name||'-'}</span>
+      <span style="font-size:13px">${esc(i.admin_profiles?.name)||'-'}</span>
       <span style="font-size:11px;color:${ok?'var(--g600)':'var(--text3)'};margin-left:auto">${ok?'승인':'대기'}</span>
     </div>`;
   }).join('');
@@ -2297,7 +2313,7 @@ async function openModal(id) {
     avatarEl.textContent = (app.name||'?').slice(0,2);
     avatarEl.style.cssText = `background:${ac.bg};color:${ac.color};width:104px;height:104px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:500;flex-shrink:0`;
   }
-  document.getElementById('mBadges').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${app.stage||'지원완료'}</span>${(app.apply_source||[]).map(s=>`<span class="stage-badge" style="background:var(--surface2);color:var(--text2)">${s}</span>`).join('')}`;
+  document.getElementById('mBadges').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${esc(app.stage)||'지원완료'}</span>${(app.apply_source||[]).map(s=>`<span class="stage-badge" style="background:var(--surface2);color:var(--text2)">${esc(s)}</span>`).join('')}`;
   document.getElementById('mCurrentStage').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${app.stage||'지원완료'}</span>`;
   // 만나이 계산
   const calcAge = (birth) => {
@@ -2321,22 +2337,22 @@ async function openModal(id) {
       if (app.military_status==='면제') return `면제 (${app.military_exemption||'-'})`;
       return app.military_status;
     })()]
-  ].map(([l,v,f])=>`<div class="info-item ${f?'full-width':''}"><div class="label">${l}</div><div class="val">${v}</div></div>`).join('');
-  document.getElementById('mApplyInfo').innerHTML=[['희망연봉',app.desired_salary?app.desired_salary.toLocaleString()+'만원':'-'],['입사가능일',app.available_start_date||'-'],['근무형태',app.work_type||'-'],['지원경로',(app.apply_source||[]).join(', ')||'-'],['지원일',app.submitted_at?new Date(app.submitted_at).toLocaleDateString('ko-KR'):'-'],['접수번호',app.submission_number||'-']].map(([l,v])=>`<div class="info-item"><div class="label">${l}</div><div class="val">${v}</div></div>`).join('');
-  document.getElementById('mSkills').innerHTML=(app.skills||[]).map(s=>`<span class="skill-tag">${s}</span>`).join('')||'<span style="font-size:13px;color:var(--text3)">없음</span>';
+  ].map(([l,v,f])=>`<div class="info-item ${f?'full-width':''}"><div class="label">${l}</div><div class="val">${esc(v)}</div></div>`).join('');
+  document.getElementById('mApplyInfo').innerHTML=[['희망연봉',app.desired_salary?app.desired_salary.toLocaleString()+'만원':'-'],['입사가능일',app.available_start_date||'-'],['근무형태',app.work_type||'-'],['지원경로',(app.apply_source||[]).join(', ')||'-'],['지원일',app.submitted_at?new Date(app.submitted_at).toLocaleDateString('ko-KR'):'-'],['접수번호',app.submission_number||'-']].map(([l,v])=>`<div class="info-item"><div class="label">${l}</div><div class="val">${esc(v)}</div></div>`).join('');
+  document.getElementById('mSkills').innerHTML=(app.skills||[]).map(s=>`<span class="skill-tag">${esc(s)}</span>`).join('')||'<span style="font-size:13px;color:var(--text3)">없음</span>';
   const links=[['GitHub',app.link_github],['LinkedIn',app.link_linkedin],['블로그',app.link_blog],['포트폴리오 URL',app.link_portfolio]].filter(([,v])=>v);
   const fileLinks = [];
   if (app.portfolio_file_url) fileLinks.push(['포트폴리오 파일', await afUrl(app.portfolio_file_url)]);
   if (app.resume_file_url) fileLinks.push(['이력서 파일', await afUrl(app.resume_file_url)]);
   const allLinks = [...links, ...fileLinks];
-  document.getElementById('mLinks').innerHTML=allLinks.map(([l,v])=>`<div class="info-item"><div class="label">${l}</div><div class="val"><a href="${v}" target="_blank" style="color:var(--b600)">🔗 보기</a></div></div>`).join('')||'<div style="font-size:13px;color:var(--text3)">없음</div>';
+  document.getElementById('mLinks').innerHTML=allLinks.map(([l,v])=>`<div class="info-item"><div class="label">${l}</div><div class="val"><a href="${safeUrl(v)}" target="_blank" rel="noopener noreferrer" style="color:var(--b600)">🔗 보기</a></div></div>`).join('')||'<div style="font-size:13px;color:var(--text3)">없음</div>';
   const [{data:edus},{data:careers}]=await Promise.all([sb.from('education').select('*').eq('application_id',id).order('sort_order'),sb.from('work_experience').select('*').eq('application_id',id).order('sort_order')]);
   document.getElementById('mEdu').innerHTML=(edus||[]).length?(edus||[]).map(e=>`
     <div class="exp-card">
-      <div class="exp-title">${e.school}</div>
-      <div class="exp-sub">${[e.major, e.degree].filter(Boolean).join(' · ')}</div>
-      <div class="exp-period">📅 ${e.start_month||''} ~ ${e.end_month||''}${e.status?' · '+e.status:''}</div>
-      ${e.gpa ? `<div class="exp-salary">📊 학점 ${e.gpa}</div>` : ''}
+      <div class="exp-title">${esc(e.school)}</div>
+      <div class="exp-sub">${esc([e.major, e.degree].filter(Boolean).join(' · '))}</div>
+      <div class="exp-period">📅 ${esc(e.start_month)||''} ~ ${esc(e.end_month)||''}${e.status?' · '+esc(e.status):''}</div>
+      ${e.gpa ? `<div class="exp-salary">📊 학점 ${esc(e.gpa)}</div>` : ''}
     </div>`).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
   // 총 경력 계산
   const calcTotalCareer = (careers) => {
@@ -2371,17 +2387,17 @@ async function openModal(id) {
     c.is_no_experience
       ? '<div class="exp-card"><div class="exp-title">신입 / 경력 없음</div></div>'
       : `<div class="exp-card">
-          <div class="exp-title">${c.company||'-'}</div>
-          <div class="exp-sub">${[c.department, c.position, c.employment_type].filter(Boolean).join(' · ')}</div>
-          <div class="exp-period">📅 ${renderCareerPeriod(c)}</div>
+          <div class="exp-title">${esc(c.company)||'-'}</div>
+          <div class="exp-sub">${esc([c.department, c.position, c.employment_type].filter(Boolean).join(' · '))}</div>
+          <div class="exp-period">📅 ${esc(renderCareerPeriod(c))}</div>
           ${c.final_salary ? `<div class="exp-salary">💰 최종연봉 ${c.final_salary.toLocaleString()}만원</div>` : ''}
-          ${c.description ? `<div class="exp-desc">${c.description}</div>` : ''}
+          ${c.description ? `<div class="exp-desc">${esc(c.description)}</div>` : ''}
         </div>`
   ).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
   const [{data:certs},{data:awards},{data:langs}]=await Promise.all([sb.from('certifications').select('*').eq('application_id',id),sb.from('awards').select('*').eq('application_id',id),sb.from('language_skills').select('*').eq('application_id',id)]);
-  document.getElementById('mCerts').innerHTML=(certs||[]).length?(certs||[]).map(c=>`<div class="exp-card"><div class="exp-title">${c.name}</div><div class="exp-sub">${c.issuer||''}</div><div class="exp-period">${c.acquired_month||''}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
-  document.getElementById('mAwards').innerHTML=(awards||[]).length?(awards||[]).map(a=>`<div class="exp-card"><div class="exp-title">${a.name}</div><div class="exp-sub">${a.organization||''} ${a.category?'· '+a.category:''}</div><div class="exp-period">${a.period||''}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
-  document.getElementById('mLangs').innerHTML=(langs||[]).length?(langs||[]).map(l=>`<div class="exp-card"><div class="exp-title">${l.language}</div><div class="exp-sub">${l.test_name||''} ${l.score?'· '+l.score:''}</div><div class="exp-period">${l.conversation_level||''} ${l.acquired_month?'· '+l.acquired_month:''}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
+  document.getElementById('mCerts').innerHTML=(certs||[]).length?(certs||[]).map(c=>`<div class="exp-card"><div class="exp-title">${esc(c.name)}</div><div class="exp-sub">${esc(c.issuer)||''}</div><div class="exp-period">${esc(c.acquired_month)||''}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
+  document.getElementById('mAwards').innerHTML=(awards||[]).length?(awards||[]).map(a=>`<div class="exp-card"><div class="exp-title">${esc(a.name)}</div><div class="exp-sub">${esc(a.organization)||''} ${a.category?'· '+esc(a.category):''}</div><div class="exp-period">${esc(a.period)||''}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
+  document.getElementById('mLangs').innerHTML=(langs||[]).length?(langs||[]).map(l=>`<div class="exp-card"><div class="exp-title">${esc(l.language)}</div><div class="exp-sub">${esc(l.test_name)||''} ${l.score?'· '+esc(l.score):''}</div><div class="exp-period">${esc(l.conversation_level)||''} ${l.acquired_month?'· '+esc(l.acquired_month):''}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
   const qs=[
     ['성장과정', app.essay_growth||app.essay_motivation],
     ['성격의 장단점', app.essay_strength],
@@ -2389,7 +2405,7 @@ async function openModal(id) {
     ['노력과 계획', app.essay_effort||app.essay_goal],
     ['지원동기/포부', app.essay_motivation],
   ].filter(([,v])=>v);
-  document.getElementById('mEssays').innerHTML=qs.filter(([,v])=>v).map(([q,a])=>`<div class="essay-card"><div class="essay-q">${q}</div><div class="essay-a">${a}</div></div>`).join('')||'<div style="font-size:13px;color:var(--text3)">없음</div>';
+  document.getElementById('mEssays').innerHTML=qs.filter(([,v])=>v).map(([q,a])=>`<div class="essay-card"><div class="essay-q">${q}</div><div class="essay-a">${esc(a)}</div></div>`).join('')||'<div style="font-size:13px;color:var(--text3)">없음</div>';
   await loadNotes(id);
   switchTab('Info');
   // 1차면접 이상이면 면접일정 패널 자동 오픈
@@ -2403,7 +2419,7 @@ async function openModal(id) {
 
 async function loadNotes(id) {
   const {data:notes}=await sb.from('admin_notes').select('*').eq('application_id',id).order('created_at',{ascending:false});
-  document.getElementById('mNotesList').innerHTML=(notes||[]).length?(notes||[]).map(n=>`<div class="note-card"><div class="note-author">${n.author_name}</div><div class="note-text">${n.content}</div><div class="note-date">${new Date(n.created_at).toLocaleDateString('ko-KR',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3);margin-bottom:12px">메모 없음</div>';
+  document.getElementById('mNotesList').innerHTML=(notes||[]).length?(notes||[]).map(n=>`<div class="note-card"><div class="note-author">${esc(n.author_name)}</div><div class="note-text">${esc(n.content)}</div><div class="note-date">${new Date(n.created_at).toLocaleDateString('ko-KR',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3);margin-bottom:12px">메모 없음</div>';
 }
 
 async function saveNote() {
@@ -2502,11 +2518,11 @@ async function loadCompanyInfo() {
           </div>
 
           <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">📝 텍스트 (이미지가 없을 때 표시)</div>
-          <input type="text" id="ci_title_${s.key}" value="${(row.title||'').replace(/"/g,'&quot;')}"
+          <input type="text" id="ci_title_${s.key}" value="${esc(row.title||'')}"
                  placeholder="제목 (예: ${s.label})"
                  style="width:100%;margin-bottom:8px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--rsm);font-family:'Pretendard',sans-serif;font-size:14px">
           <textarea id="ci_content_${s.key}" placeholder="${s.placeholder}"
-                    style="width:100%;min-height:110px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--rsm);font-family:'Pretendard',sans-serif;font-size:14px;line-height:1.6;resize:vertical">${row.content||''}</textarea>
+                    style="width:100%;min-height:110px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--rsm);font-family:'Pretendard',sans-serif;font-size:14px;line-height:1.6;resize:vertical">${esc(row.content||'')}</textarea>
         </div>`;
     }).join('')}
   `;
@@ -2576,15 +2592,15 @@ async function loadAdmins() {
     const perms=(allPerms||[]).filter(p=>p.admin_id===a.id);
     const permJobs=perms.map(p=>allJobs.find(j=>j.id===p.job_posting_id)).filter(Boolean);
     return `<div class="admin-card">
-      <div class="avatar" style="width:36px;height:36px;font-size:13px;flex-shrink:0">${a.name[0]}</div>
+      <div class="avatar" style="width:36px;height:36px;font-size:13px;flex-shrink:0">${esc(a.name[0])}</div>
       <div class="admin-info">
-        <div class="admin-name">${a.name} <span class="role-badge ${a.role==='superadmin'?'role-super':'role-manager'}">${a.role==='superadmin'?'슈퍼어드민':'관리자'}</span> ${!a.is_active?'<span style="font-size:11px;color:var(--r600)">(비활성)</span>':''}</div>
-        <div class="admin-email">${a.email} ${a.department?'· '+a.department:''}</div>
-        ${a.role!=='superadmin'?`<div class="admin-perms">${permJobs.length?permJobs.map(j=>`<span class="perm-tag">${j.title}</span>`).join(''):'<span style="font-size:11px;color:var(--text3)">권한 없음</span>'}</div>`:'<div style="font-size:11px;color:var(--a600);margin-top:4px">모든 공고 접근 가능</div>'}
+        <div class="admin-name">${esc(a.name)} <span class="role-badge ${a.role==='superadmin'?'role-super':'role-manager'}">${a.role==='superadmin'?'슈퍼어드민':'관리자'}</span> ${!a.is_active?'<span style="font-size:11px;color:var(--r600)">(비활성)</span>':''}</div>
+        <div class="admin-email">${esc(a.email)} ${a.department?'· '+esc(a.department):''}</div>
+        ${a.role!=='superadmin'?`<div class="admin-perms">${permJobs.length?permJobs.map(j=>`<span class="perm-tag">${esc(j.title)}</span>`).join(''):'<span style="font-size:11px;color:var(--text3)">권한 없음</span>'}</div>`:'<div style="font-size:11px;color:var(--a600);margin-top:4px">모든 공고 접근 가능</div>'}
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="btn btn-sm btn-primary" onclick="openAdminEdit('${a.id}')">수정</button>
-        ${a.id!==currentAdmin.id?`<button class="btn btn-sm btn-danger" onclick="toggleAdminActive('${a.id}','${a.name}',${a.is_active})">${a.is_active?'비활성화':'활성화'}</button>`:''}
+        ${a.id!==currentAdmin.id?`<button class="btn btn-sm btn-danger" onclick="toggleAdminActive('${a.id}',${a.is_active})">${a.is_active?'비활성화':'활성화'}</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2594,7 +2610,7 @@ async function loadAdmins() {
 function openAdminForm() {
   ['aName','aEmail','aPw','aDept'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('aRole').value='manager';
-  document.getElementById('aJobPerms').innerHTML=allJobs.map(j=>`<label style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;font-size:13px;transition:background .12s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''"><input type="checkbox" value="${j.id}" style="width:16px;height:16px;flex-shrink:0;cursor:pointer;accent-color:var(--accent)"><div style="flex:1;min-width:0"><div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.title}</div><div style="font-size:11px;color:var(--text3);margin-top:1px">${j.department||''} · ${j.is_active?'<span style=\'color:var(--g600)\'>모집중</span>':'마감'}</div></div></label>`).join('');
+  document.getElementById('aJobPerms').innerHTML=allJobs.map(j=>`<label style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;font-size:13px;transition:background .12s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''"><input type="checkbox" value="${j.id}" style="width:16px;height:16px;flex-shrink:0;cursor:pointer;accent-color:var(--accent)"><div style="flex:1;min-width:0"><div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(j.title)}</div><div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(j.department)||''} · ${j.is_active?'<span style=\'color:var(--g600)\'>모집중</span>':'마감'}</div></div></label>`).join('');
   document.getElementById('adminFormErr').classList.add('hidden');
   document.getElementById('adminFormModal').classList.remove('hidden');
 }
@@ -2664,8 +2680,8 @@ async function openAdminEdit(adminId) {
       <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;font-size:13px;transition:background .12s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
         <input type="checkbox" value="${j.id}" ${currentIds.includes(j.id)?'checked':''} style="width:16px;height:16px;flex-shrink:0;cursor:pointer;accent-color:var(--accent)">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.title}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:1px">${j.department||''} · ${j.is_active?'<span style=\'color:var(--g600)\'>모집중</span>':'마감'}</div>
+          <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(j.title)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(j.department)||''} · ${j.is_active?'<span style=\'color:var(--g600)\'>모집중</span>':'마감'}</div>
         </div>
       </label>
     `).join('');
@@ -2693,7 +2709,8 @@ async function saveAdminEdit() {
   showToast('✓ 관리자 정보 수정 완료');
 }
 
-async function toggleAdminActive(id, name, isActive) {
+async function toggleAdminActive(id, isActive) {
+  const name = (allAdmins.find(x => x.id === id)?.name) || '해당';
   if(!confirm(`${name} 관리자를 ${isActive?'비활성화':'활성화'}하시겠습니까?`)) return;
   await sb.from('admin_profiles').update({is_active:!isActive}).eq('id',id);
   await loadAdmins(); showToast(`${isActive?'비활성화':'활성화'} 완료`);
@@ -2807,20 +2824,20 @@ function renderCandidates() {
       <td><input type="checkbox" class="cand-check" value="${a.id}" style="cursor:pointer;accent-color:var(--accent)"></td>
       <td>
         <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:28px;height:28px;border-radius:50%;background:${ac.bg};color:${ac.color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0">${(a.name||'?').slice(0,2)}</div>
+          <div style="width:28px;height:28px;border-radius:50%;background:${ac.bg};color:${ac.color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0">${esc((a.name||'?').slice(0,2))}</div>
           <div>
-            <div style="font-weight:500;cursor:pointer;color:var(--accent)" onclick="openModal('${a.id}')">${a.name||'이름없음'}</div>
-            <div style="font-size:11px;color:var(--text3)">${a.email||''}</div>
+            <div style="font-weight:500;cursor:pointer;color:var(--accent)" onclick="openModal('${a.id}')">${esc(a.name)||'이름없음'}</div>
+            <div style="font-size:11px;color:var(--text3)">${esc(a.email)||''}</div>
           </div>
         </div>
       </td>
-      <td style="font-size:13px;color:var(--text2)">${a.job_postings?.title||'-'}</td>
-      <td><span class="stage-badge" style="background:${sc.bg};color:${sc.textColor}">${a.stage||'지원완료'}</span></td>
-      <td style="font-size:12px;color:var(--text2)">${source}</td>
+      <td style="font-size:13px;color:var(--text2)">${esc(a.job_postings?.title)||'-'}</td>
+      <td><span class="stage-badge" style="background:${sc.bg};color:${sc.textColor}">${esc(a.stage)||'지원완료'}</span></td>
+      <td style="font-size:12px;color:var(--text2)">${esc(source)}</td>
       <td style="font-size:12px;color:var(--text3)">${date}</td>
-      <td style="font-size:12px;color:var(--text2)">${a.phone||'-'}</td>
+      <td style="font-size:12px;color:var(--text2)">${esc(a.phone)||'-'}</td>
       <td>
-        <button class="btn btn-sm btn-danger" onclick="deleteSingle('${a.id}','${(a.name||'').replace(/'/g,"\'")}')">삭제</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteSingle('${a.id}')">삭제</button>
       </td>
     </tr>`;
   }).join('');
@@ -2845,21 +2862,34 @@ async function deleteAppStorageFiles(app) {
   } catch(e) { console.log('Storage 파일 삭제 실패:', e); }
 }
 
-async function deleteSingle(id, name) {
+// 지원자 1명의 모든 개인정보를 파기 (개보법 제21조: 연결된 데이터 전부 복구 불가하게 삭제)
+async function purgeApplicationData(id) {
+  const app = allApps.find(a => a.id === id);
+  // Storage 파일 먼저 삭제
+  await deleteAppStorageFiles(app);
+  const relatedTables = [
+    'education', 'work_experience', 'certifications', 'awards', 'language_skills',
+    'admin_notes',
+    'interview_evaluations',      // 면접 평가표
+    'interview_selections',       // 면접 일정 선택·가능일정·미참석 사유
+    'interview_chats',            // 면접관 채팅 (지원자 관련 내용 포함)
+    'interview_approvals',        // 면접 승인 기록
+    'interview_approvals_2nd',
+    'application_stage_history',  // 단계 이동 이력
+  ];
+  for (const t of relatedTables) {
+    try { await sb.from(t).delete().eq('application_id', id); } catch(e) { console.log(`${t} 삭제 실패:`, e); }
+  }
+  await sb.from('applications').delete().eq('id', id);
+}
+
+async function deleteSingle(id) {
+  const name = (allApps.find(a => a.id === id)?.name) || '해당';
   if (!confirm(`"${name}" 지원자의 데이터를 삭제하시겠습니까?
 이 작업은 되돌릴 수 없습니다.`)) return;
   showLoading('삭제 중...');
   logAudit('지원자 삭제', 'application', id, name);
-  // Storage 파일 먼저 삭제
-  const app = allApps.find(a => a.id === id);
-  await deleteAppStorageFiles(app);
-  await sb.from('education').delete().eq('application_id', id);
-  await sb.from('work_experience').delete().eq('application_id', id);
-  await sb.from('certifications').delete().eq('application_id', id);
-  await sb.from('awards').delete().eq('application_id', id);
-  await sb.from('language_skills').delete().eq('application_id', id);
-  await sb.from('admin_notes').delete().eq('application_id', id);
-  await sb.from('applications').delete().eq('id', id);
+  await purgeApplicationData(id);
   hideLoading();
   allApps = allApps.filter(a => a.id !== id);
   updateStats();
@@ -2876,16 +2906,7 @@ async function deleteSelected() {
   showLoading('삭제 중...');
   logAudit('지원자 일괄 삭제', 'application', null, `${checked.length}명`);
   for (const id of checked) {
-    // Storage 파일 삭제
-    const app = allApps.find(a => a.id === id);
-    await deleteAppStorageFiles(app);
-    await sb.from('education').delete().eq('application_id', id);
-    await sb.from('work_experience').delete().eq('application_id', id);
-    await sb.from('certifications').delete().eq('application_id', id);
-    await sb.from('awards').delete().eq('application_id', id);
-    await sb.from('language_skills').delete().eq('application_id', id);
-    await sb.from('admin_notes').delete().eq('application_id', id);
-    await sb.from('applications').delete().eq('id', id);
+    await purgeApplicationData(id);
   }
   hideLoading();
   allApps = allApps.filter(a => !checked.includes(a.id));
@@ -3424,11 +3445,11 @@ async function loadDispatchJobs() {
         <div style="display:flex;align-items:flex-start;gap:12px">
           <div style="width:8px;height:8px;border-radius:50%;background:${j.is_active?'#3B6D11':'#9E9C97'};margin-top:6px;flex-shrink:0"></div>
           <div style="flex:1">
-            <div style="font-size:15px;font-weight:600;margin-bottom:4px">${j.title}</div>
+            <div style="font-size:15px;font-weight:600;margin-bottom:4px">${esc(j.title)}</div>
             <div style="font-size:13px;color:var(--text3);display:flex;gap:12px;flex-wrap:wrap">
-              <span>🏢 ${j.dispatch_agencies?.name || '-'}</span>
-              ${j.location ? '<span>📍 '+j.location+'</span>' : ''}
-              ${j.period ? '<span>📅 '+j.period+'</span>' : ''}
+              <span>🏢 ${esc(j.dispatch_agencies?.name) || '-'}</span>
+              ${j.location ? '<span>📍 '+esc(j.location)+'</span>' : ''}
+              ${j.period ? '<span>📅 '+esc(j.period)+'</span>' : ''}
               <span style="color:${j.is_active?'var(--g600)':'var(--text3)'};font-weight:500">${j.is_active?'모집중':'마감'}</span>
             </div>
           </div>
@@ -3474,14 +3495,14 @@ function renderDispatchPipeline() {
             const cardId = a.id;
             return `<div class="app-card" onclick="openDispatchCandidate('${cardId}')">
               <div class="app-card-top">
-                <div class="app-card-avatar" style="background:${ac.bg};color:${ac.color}">${(a.name||'?').slice(0,2)}</div>
+                <div class="app-card-avatar" style="background:${ac.bg};color:${ac.color}">${esc((a.name||'?').slice(0,2))}</div>
                 <div>
-                  <div class="app-card-name">${a.name||'이름없음'}</div>
-                  <div class="app-card-role">${a.phone||''}</div>
+                  <div class="app-card-name">${esc(a.name)||'이름없음'}</div>
+                  <div class="app-card-role">${esc(a.phone)||''}</div>
                 </div>
               </div>
-              ${a.resume_url ? `<div style="margin-top:8px"><a href="${a.resume_url}" target="_blank" onclick="event.stopPropagation()" style="font-size:12px;color:var(--b600);text-decoration:none">📎 이력서 보기</a></div>` : ''}
-              ${a.memo ? `<div style="font-size:12px;color:var(--text3);margin-top:6px">${a.memo}</div>` : ''}
+              ${a.resume_url ? `<div style="margin-top:8px"><a href="${safeUrl(a.resume_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="font-size:12px;color:var(--b600);text-decoration:none">📎 이력서 보기</a></div>` : ''}
+              ${a.memo ? `<div style="font-size:12px;color:var(--text3);margin-top:6px">${esc(a.memo)}</div>` : ''}
             </div>`;
           }).join('') : '<div style="text-align:center;padding:20px;font-size:13px;color:var(--text3)">없음</div>'}
         </div>
@@ -3497,7 +3518,7 @@ async function openDispatchCandidate(id) {
     + DISPATCH_PIPELINE.map(p => `<button class="btn" style="background:${p.bg};color:${p.textColor};border-color:${p.color}30;padding:10px" onclick="updateDispatchStage('${id}','${p.key}')">${p.label}${(cand.stage||'지원')===p.key?' ✓ 현재':''}</button>`).join('')
     + `<button class="btn btn-pass" style="padding:8px 16px" onclick="passDispatchCandidate('${id}')">✓ 합격</button>`
       + `<button class="btn btn-fail" style="padding:8px 16px" onclick="updateDispatchStage('${id}','불합격')">✕ 불합격</button>`
-      + (cand.resume_url ? '<a href="'+cand.resume_url+'" target="_blank" class="btn" style="text-align:center;text-decoration:none">📎 이력서 보기</a>' : '')
+      + (cand.resume_url ? '<a href="'+safeUrl(cand.resume_url)+'" target="_blank" rel="noopener noreferrer" class="btn" style="text-align:center;text-decoration:none">📎 이력서 보기</a>' : '')
     + '</div>';
   document.getElementById('confirmYes').style.display = 'none';
   document.getElementById('confirmNo').textContent = '닫기';
@@ -3567,7 +3588,7 @@ async function handleDispatchInterviewApproval(candId, cand) {
     const ok = approvedIds.includes(i.admin_id);
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border)">
       <span style="font-size:16px">${ok?'✅':'⬜'}</span>
-      <span style="font-size:13px">${i.admin_profiles?.name||'-'}</span>
+      <span style="font-size:13px">${esc(i.admin_profiles?.name)||'-'}</span>
       <span style="font-size:11px;color:${ok?'var(--g600)':'var(--text3)'};margin-left:auto">${ok?'승인':'대기'}</span>
     </div>`;
   }).join('');
@@ -3617,7 +3638,7 @@ async function openDispatchJobForm() {
     sel.innerHTML = '<option value="">등록된 업체 없음 — 먼저 파견업체를 등록하세요</option>';
     showToast('⚠ 파견업체를 먼저 등록해주세요');
   } else {
-    sel.innerHTML = '<option value="">업체 선택</option>' + allAgencies.map(a => '<option value="'+a.id+'">'+a.name+'</option>').join('');
+    sel.innerHTML = '<option value="">업체 선택</option>' + allAgencies.map(a => '<option value="'+a.id+'">'+esc(a.name)+'</option>').join('');
   }
   document.getElementById('djManagers').innerHTML = allAdmins.filter(a=>a.role==='manager').map(a => '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs)"><input type="checkbox" value="'+a.id+'" style="accent-color:var(--accent)"> '+a.name+' ('+(a.department||'-')+')</label>').join('');
   document.getElementById('dispatchJobFormModal').classList.remove('hidden');
@@ -3713,7 +3734,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const kb = (f.size/1024).toFixed(0);
         const over = f.size > 5*1024*1024;
         return `<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:${over?'#FCEBEB':'var(--bg)'};border:0.5px solid ${over?'#F5BEBE':'var(--border)'};border-radius:var(--rxs);font-size:12px">
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
           <span style="color:${over?'var(--r600)':'var(--text3)'};flex-shrink:0">${kb}KB${over?' ⚠ 5MB 초과':''}</span>
         </div>`;
       }).join('');
@@ -3784,22 +3805,22 @@ async function loadDispatchAgencies() {
   const { data: agencies, error } = await sb.from('dispatch_agencies').select('*').order('created_at', { ascending: false });
   if (error) { c.innerHTML = '<div class="empty-state"><p>오류: '+error.message+'</p></div>'; return; }
   if (!agencies?.length) { c.innerHTML = '<div class="empty-state"><div class="icon">🏢</div><p>등록된 파견업체가 없습니다</p></div>'; return; }
+  window._agenciesCache = agencies;
   c.innerHTML = agencies.map(a => {
-    const safeName = a.name.replace(/'/g, "\\'");
     return `<div class="admin-card" style="align-items:flex-start;gap:14px">
-      <div class="avatar" style="background:#FAEEDA;color:#633806;width:40px;height:40px;font-size:14px;flex-shrink:0;margin-top:2px">${a.name[0]}</div>
+      <div class="avatar" style="background:#FAEEDA;color:#633806;width:40px;height:40px;font-size:14px;flex-shrink:0;margin-top:2px">${esc(a.name[0])}</div>
       <div class="admin-info" style="flex:1;min-width:0">
-        <div class="admin-name">${a.name} <span class="role-badge role-agency">파견업체</span>${a.is_active?'':'<span style=\"font-size:11px;color:var(--r600);margin-left:6px\">(비활성)</span>'}</div>
+        <div class="admin-name">${esc(a.name)} <span class="role-badge role-agency">파견업체</span>${a.is_active?'':'<span style=\"font-size:11px;color:var(--r600);margin-left:6px\">(비활성)</span>'}</div>
         <div class="admin-email" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:8px">
-          ${a.email ? `<span>✉️ ${a.email}</span>` : ''}
-          ${a.contact_name ? `<span>👤 ${a.contact_name}</span>` : ''}
-          ${a.phone ? `<span>📞 ${a.phone}</span>` : ''}
+          ${a.email ? `<span>✉️ ${esc(a.email)}</span>` : ''}
+          ${a.contact_name ? `<span>👤 ${esc(a.contact_name)}</span>` : ''}
+          ${a.phone ? `<span>📞 ${esc(a.phone)}</span>` : ''}
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn btn-sm" onclick="viewAgencyJobs('${a.id}','${safeName}')">공고 보기</button>
+        <button class="btn btn-sm" onclick="viewAgencyJobs('${a.id}')">공고 보기</button>
         <button class="btn btn-sm btn-primary" onclick="openAgencyEdit('${a.id}')">수정</button>
-        <button class="btn btn-sm btn-danger" onclick="toggleAgencyActive('${a.id}','${safeName}',${a.is_active})">${a.is_active?'비활성화':'활성화'}</button>
+        <button class="btn btn-sm btn-danger" onclick="toggleAgencyActive('${a.id}',${a.is_active})">${a.is_active?'비활성화':'활성화'}</button>
       </div>
     </div>`;
   }).join('');
@@ -3812,13 +3833,13 @@ async function openAgencyEdit(agencyId) {
   document.getElementById('confirmSub').innerHTML = `
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
       <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">업체명 *</label>
-        <input id="aeCompany" type="text" value="${a.name||''}" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px"></div>
+        <input id="aeCompany" type="text" value="${esc(a.name||'')}" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px"></div>
       <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">이메일</label>
-        <input id="aeEmail" type="email" value="${a.email||''}" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px"></div>
+        <input id="aeEmail" type="email" value="${esc(a.email||'')}" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px"></div>
       <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">담당자명</label>
-        <input id="aeContact" type="text" value="${a.contact_name||''}" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px"></div>
+        <input id="aeContact" type="text" value="${esc(a.contact_name||'')}" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px"></div>
       <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">연락처</label>
-        <input id="aePhone" type="text" value="${a.phone||''}" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px"></div>
+        <input id="aePhone" type="text" value="${esc(a.phone||'')}" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px"></div>
     </div>`;
   document.getElementById('confirmYes').textContent = '저장';
   document.getElementById('confirmYes').style.display = '';
@@ -3840,7 +3861,8 @@ async function openAgencyEdit(agencyId) {
   };
 }
 
-async function toggleAgencyActive(id, name, isActive) {
+async function toggleAgencyActive(id, isActive) {
+  const name = (window._agenciesCache||[]).find(x => x.id === id)?.name || '해당';
   if (!confirm('"'+name+'" 업체를 '+(isActive?'비활성화':'활성화')+'하시겠습니까?')) return;
   await sb.from('dispatch_agencies').update({ is_active: !isActive }).eq('id', id);
   await loadDispatchAgencies();
@@ -3848,7 +3870,8 @@ async function toggleAgencyActive(id, name, isActive) {
 }
 
 // ── 파견업체 공고 보기 ────────────────────────────────────
-async function viewAgencyJobs(agencyId, agencyName) {
+async function viewAgencyJobs(agencyId) {
+  const agencyName = (window._agenciesCache||[]).find(x => x.id === agencyId)?.name || '';
   // 해당 업체 공고 목록을 confirm 모달에 표시
   const { data: jobs } = await sb.from('dispatch_postings')
     .select('id, title, is_active, location, period')
@@ -3860,8 +3883,8 @@ async function viewAgencyJobs(agencyId, agencyName) {
   } else {
     document.getElementById('confirmSub').innerHTML = '<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">'
       + jobs.map(j => `<div style="padding:10px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;background:var(--surface)" onclick="closeConfirmModal();openDispatchDetail('${j.id}')">
-          <div style="font-weight:600;font-size:13px">${j.title}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px">${j.location||''} ${j.period?'· '+j.period:''} <span style="color:${j.is_active?'var(--g600)':'var(--text3)'}">${j.is_active?'모집중':'마감'}</span></div>
+          <div style="font-weight:600;font-size:13px">${esc(j.title)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">${esc(j.location)||''} ${j.period?'· '+esc(j.period):''} <span style="color:${j.is_active?'var(--g600)':'var(--text3)'}">${j.is_active?'모집중':'마감'}</span></div>
         </div>`).join('')
       + '</div>';
   }
@@ -3886,38 +3909,39 @@ async function loadDispatchAdmins() {
     return;
   }
   const { data: allPerms } = await sb.from('dispatch_permissions').select('admin_id, dispatch_postings(title)');
+  window._dispatchAdminCache = allAdminList;
   c.innerHTML = allAdminList.map(a => {
-    const safeName2 = a.name.replace(/'/g, "\'");
     const isSuper = a.is_super_dispatch;
     const perms = (allPerms||[]).filter(p => p.admin_id === a.id);
     const permBadge = isSuper
       ? `<span class="perm-tag" style="background:#EAF3DE;color:#27500A">⭐ 슈퍼파견담당자 (전체 공고)</span>`
       : perms.length
-        ? perms.filter(p=>p.dispatch_postings).map(p=>`<span class="perm-tag">📋 ${p.dispatch_postings.title}</span>`).join('')
+        ? perms.filter(p=>p.dispatch_postings).map(p=>`<span class="perm-tag">📋 ${esc(p.dispatch_postings.title)}</span>`).join('')
         : `<span style="font-size:11px;color:var(--text3)">배정된 공고 없음</span>`;
     return `<div class="admin-card">
-      <div class="avatar" style="width:36px;height:36px;font-size:13px;flex-shrink:0">${a.name[0]}</div>
+      <div class="avatar" style="width:36px;height:36px;font-size:13px;flex-shrink:0">${esc(a.name[0])}</div>
       <div class="admin-info">
-        <div class="admin-name">${a.name} <span class="role-badge role-manager">파견 담당자</span>${isSuper?'<span class="role-badge" style="background:#FEF3C7;color:#92400E;margin-left:4px">⭐슈퍼</span>':''}</div>
-        <div class="admin-email">${a.email}${a.department?' · '+a.department:''}</div>
+        <div class="admin-name">${esc(a.name)} <span class="role-badge role-manager">파견 담당자</span>${isSuper?'<span class="role-badge" style="background:#FEF3C7;color:#92400E;margin-left:4px">⭐슈퍼</span>':''}</div>
+        <div class="admin-email">${esc(a.email)}${a.department?' · '+esc(a.department):''}</div>
         <div class="admin-perms" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${permBadge}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;flex-direction:column;align-items:flex-end">
-        <button class="btn btn-sm btn-primary" onclick="openDispatchAdminEdit('${a.id}','${safeName2}',${!!isSuper})">수정</button>
-        <button class="btn btn-sm btn-danger" onclick="removeDispatchAdmin('${a.id}','${safeName2}')">삭제</button>
+        <button class="btn btn-sm btn-primary" onclick="openDispatchAdminEdit('${a.id}',${!!isSuper})">수정</button>
+        <button class="btn btn-sm btn-danger" onclick="removeDispatchAdmin('${a.id}')">삭제</button>
       </div>
     </div>`;
   }).join('');
 }
 
-async function openDispatchAdminEdit(adminId, adminName, isSuper) {
+async function openDispatchAdminEdit(adminId, isSuper) {
+  const adminName = (window._dispatchAdminCache||[]).find(x => x.id === adminId)?.name || '';
   const { data: jobs } = await sb.from('dispatch_postings').select('id, title').order('created_at', {ascending: false});
   const { data: perms } = await sb.from('dispatch_permissions').select('dispatch_posting_id').eq('admin_id', adminId);
   const permIds = (perms||[]).map(p => p.dispatch_posting_id);
   showConfirm(`${adminName} 권한 수정`, '', null);
   const jobChecks = (jobs||[]).map(j =>
     `<label style="display:flex;align-items:center;gap:8px;padding:7px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px;cursor:pointer">
-      <input type="checkbox" class="daEditPerm" value="${j.id}" ${permIds.includes(j.id)?'checked':''} style="accent-color:var(--accent)"> ${j.title}
+      <input type="checkbox" class="daEditPerm" value="${j.id}" ${permIds.includes(j.id)?'checked':''} style="accent-color:var(--accent)"> ${esc(j.title)}
     </label>`
   ).join('');
   document.getElementById('confirmSub').innerHTML = `
@@ -3948,7 +3972,8 @@ async function openDispatchAdminEdit(adminId, adminName, isSuper) {
 }
 
 
-async function removeDispatchAdmin(id, name) {
+async function removeDispatchAdmin(id) {
+  const name = (window._dispatchAdminCache||[]).find(x => x.id === id)?.name || '해당';
   if (!confirm('"'+name+'" 담당자를 파견직 관리에서 제거하시겠습니까?')) return;
   await sb.from('dispatch_permissions').delete().eq('admin_id', id);
   await loadDispatchAdmins();
@@ -3959,7 +3984,7 @@ async function openDispatchPermEdit(adminId, adminName) {
   const { data: currentPerms } = await sb.from('dispatch_permissions').select('dispatch_posting_id').eq('admin_id', adminId);
   const currentIds = (currentPerms||[]).map(p=>p.dispatch_posting_id);
   showConfirm(adminName+' - 파견 공고 권한', '', null);
-  document.getElementById('confirmSub').innerHTML = '<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;max-height:300px;overflow-y:auto">'+allDispatchJobs.map(j=>'<label style="display:flex;align-items:center;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;font-size:13px;text-align:left"><input type="checkbox" class="dperm-check" value="'+j.id+'" '+(currentIds.includes(j.id)?'checked':'')+' style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0"><span>'+j.title+'</span></label>').join('')+'</div>';
+  document.getElementById('confirmSub').innerHTML = '<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;max-height:300px;overflow-y:auto">'+allDispatchJobs.map(j=>'<label style="display:flex;align-items:center;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;font-size:13px;text-align:left"><input type="checkbox" class="dperm-check" value="'+j.id+'" '+(currentIds.includes(j.id)?'checked':'')+' style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0"><span>'+esc(j.title)+'</span></label>').join('')+'</div>';
   document.getElementById('confirmYes').textContent = '저장';
   document.getElementById('confirmYes').onclick = async () => {
     const checked = Array.from(document.querySelectorAll('.dperm-check:checked')).map(c=>c.value);
@@ -3978,7 +4003,7 @@ function openDispatchAdminForm() {
   document.getElementById('dAdIsSuper').checked = false;
   toggleDAdPerms();
   document.getElementById('dAdErr').classList.add('hidden');
-  document.getElementById('dAdPerms').innerHTML = allDispatchJobs.map(j=>'<label style="display:flex;align-items:center;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;font-size:13px"><input type="checkbox" value="'+j.id+'" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0"><span>'+j.title+'</span></label>').join('');
+  document.getElementById('dAdPerms').innerHTML = allDispatchJobs.map(j=>'<label style="display:flex;align-items:center;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:var(--rxs);cursor:pointer;font-size:13px"><input type="checkbox" value="'+j.id+'" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0"><span>'+esc(j.title)+'</span></label>').join('');
   document.getElementById('dispatchAdminFormModal').classList.remove('hidden');
 }
 function closeDispatchAdminForm(){document.getElementById('dispatchAdminFormModal').classList.add('hidden');}
@@ -4412,8 +4437,8 @@ function buildChatBubble(msg) {
   const isMe = msg.admin_id === currentAdmin.id;
   const time = new Date(msg.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
   return `<div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'}">
-    ${!isMe ? `<div style="font-size:10px;color:var(--text3);margin-bottom:2px;padding:0 4px">${msg.admin_name||'-'}</div>` : ''}
-    <div class="iv-chat-msg ${isMe?'mine':'others'}">${msg.message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+    ${!isMe ? `<div style="font-size:10px;color:var(--text3);margin-bottom:2px;padding:0 4px">${esc(msg.admin_name)||'-'}</div>` : ''}
+    <div class="iv-chat-msg ${isMe?'mine':'others'}">${esc(msg.message)}
       <div class="iv-chat-msg-time">${time}</div>
     </div>
   </div>`;
@@ -4555,7 +4580,7 @@ function renderIvCalendar() {
     cells += `<div class="iv-cal-cell ${items.length ? 'has-items clickable' : ''} ${isToday ? 'today' : ''}" id="ivcell-${dateStr}" ${items.length ? `onclick="ivScrollToDate('${dateStr}')"` : ''}>
       <div class="iv-cal-daynum" style="color:${dow===0?'#A32D2D':dow===6?'#185FA5':'inherit'}">${d}</div>
       <div class="iv-cal-chips">
-        ${items.slice(0,3).map(({app, slot}) => `<div class="iv-cal-chip">${slot ? formatSlotTime(slot.slot_time).replace('오전','오전 ').replace('오후','오후 ') : ''} ${app.name}</div>`).join('')}
+        ${items.slice(0,3).map(({app, slot}) => `<div class="iv-cal-chip">${slot ? formatSlotTime(slot.slot_time).replace('오전','오전 ').replace('오후','오후 ') : ''} ${esc(app.name)}</div>`).join('')}
         ${items.length > 3 ? `<div class="iv-cal-more" onclick="event.stopPropagation(); ivShowDayPopover('${dateStr}', this)">+${items.length-3}명 더</div>` : ''}
       </div>
     </div>`;
@@ -4610,7 +4635,7 @@ function ivShowDayPopover(dateStr, triggerEl) {
         const roundLabel = app.stage === '2차면접' ? '2차' : '1차';
         return `<div class="iv-day-popover-item" onclick="ivClosePopover(); openInterviewSession('${app.id}',false)">
           <span class="iv-day-popover-time">${timeStr}</span>
-          <span class="iv-day-popover-name">${app.name}</span>
+          <span class="iv-day-popover-name">${esc(app.name)}</span>
           <span class="iv-day-popover-round">${roundLabel}</span>
         </div>`;
       }).join('')}
@@ -4654,11 +4679,11 @@ function ivCardHtml(app, slot) {
     <div class="iv-room-time">${timeStr}</div>
     <div style="flex:1">
       <div style="display:flex;align-items:center;gap:8px">
-        <div class="iv-room-name">${app.name}</div>
+        <div class="iv-room-name">${esc(app.name)}</div>
         <span style="font-size:11px;background:${roundColor}20;color:${roundColor};padding:2px 8px;border-radius:20px;font-weight:600">${roundLabel}면접</span>
       </div>
-      <div class="iv-room-job">${app.job_postings?.title||'-'} ${app.job_postings?.department?'· '+app.job_postings.department:''}</div>
-      ${slot?.slot_location?`<div style="font-size:11px;color:#666;margin-top:2px">📍 ${slot.slot_location}</div>`:''}
+      <div class="iv-room-job">${esc(app.job_postings?.title)||'-'} ${app.job_postings?.department?'· '+esc(app.job_postings.department):''}</div>
+      ${slot?.slot_location?`<div style="font-size:11px;color:#666;margin-top:2px">📍 ${esc(slot.slot_location)}</div>`:''}
     </div>
     <div class="iv-room-status" style="background:#EEEDFE;color:#534AB7">면접 시작 →</div>
   </div>`;
@@ -4731,8 +4756,8 @@ async function renderInterviewSession(app) {
   const memoHtml = (notes||[]).length ? `<div style="min-width:180px;max-width:220px;background:#FFFBE6;border:1px solid #FFE58F;border-radius:var(--rxs);padding:10px;flex-shrink:0;overflow-y:auto;max-height:150px">
     <div style="font-size:10px;font-weight:700;color:#876800;margin-bottom:5px">📌 관리자 메모 (${(notes||[]).length})</div>
     ${(notes||[]).map(n=>`<div style="font-size:12px;color:#333;line-height:1.5;margin-bottom:6px;padding-bottom:6px;border-bottom:0.5px solid #FFE58F">
-      <div style="font-size:10px;color:#876800;margin-bottom:2px">${n.author_name||'-'}</div>
-      <div style="white-space:pre-wrap">${n.content||''}</div>
+      <div style="font-size:10px;color:#876800;margin-bottom:2px">${esc(n.author_name)||'-'}</div>
+      <div style="white-space:pre-wrap">${esc(n.content)||''}</div>
     </div>`).join('')}
   </div>` : '';
 
@@ -4791,11 +4816,11 @@ async function renderInterviewSession(app) {
         <div style="display:flex;gap:16px;margin-bottom:20px;padding:16px;background:var(--surface2);border-radius:var(--rsm)">
           ${photoHtml}
           <div style="flex:1;min-width:0">
-            <div style="font-size:20px;font-weight:700;margin-bottom:6px">${app.name}</div>
-            <div style="font-size:13px;color:#444;margin-bottom:3px">${app.email||''}</div>
-            <div style="font-size:13px;color:#444;margin-bottom:3px">${app.phone||''}</div>
-            <div style="font-size:12px;color:#666">${app.birth_date||''} ${app.gender?'· '+app.gender:''} ${app.nationality?'· '+app.nationality:''}</div>
-            ${app.address?`<div style="font-size:12px;color:#666;margin-top:2px">📍 ${app.address}</div>`:''}
+            <div style="font-size:20px;font-weight:700;margin-bottom:6px">${esc(app.name)}</div>
+            <div style="font-size:13px;color:#444;margin-bottom:3px">${esc(app.email)||''}</div>
+            <div style="font-size:13px;color:#444;margin-bottom:3px">${esc(app.phone)||''}</div>
+            <div style="font-size:12px;color:#666">${esc(app.birth_date)||''} ${app.gender?'· '+esc(app.gender):''} ${app.nationality?'· '+esc(app.nationality):''}</div>
+            ${app.address?`<div style="font-size:12px;color:#666;margin-top:2px">📍 ${esc(app.address)}</div>`:''}
           </div>
           ${memoHtml}
         </div>
@@ -4814,7 +4839,7 @@ async function renderInterviewSession(app) {
              ['특기/취미', [app.specialty, app.hobby].filter(Boolean).join(' / ')||'-']
           ].map(([l,v])=>`<div style="background:var(--surface2);padding:8px 10px;border-radius:var(--rxs)">
             <div style="font-size:10px;color:var(--text3);font-weight:600;margin-bottom:2px">${l}</div>
-            <div style="font-size:12px;color:#1a1a1a;font-weight:500">${v}</div>
+            <div style="font-size:12px;color:#1a1a1a;font-weight:500">${esc(v)}</div>
           </div>`).join('')}
         </div>
 
@@ -4822,49 +4847,49 @@ async function renderInterviewSession(app) {
         ${(app.skills||[]).length ? `<div style="margin-bottom:14px">
           <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#534AB7">보유 스킬</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
-            ${(app.skills||[]).map(s=>`<span style="background:#EEEDFE;color:#534AB7;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500">${s}</span>`).join('')}
+            ${(app.skills||[]).map(s=>`<span style="background:#EEEDFE;color:#534AB7;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500">${esc(s)}</span>`).join('')}
           </div>
         </div>` : ''}
 
         <!-- 학력 -->
         ${edus?.length ? `<div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#534AB7">학력</div>
         ${edus.map(e=>`<div class="exp-card">
-          <div class="exp-title">${e.school}</div>
-          <div class="exp-sub">${[e.major,e.degree].filter(Boolean).join(' · ')}</div>
-          <div class="exp-period">📅 ${e.start_month||''} ~ ${e.end_month||''}${e.status?' · '+e.status:''}</div>
-          ${e.gpa?`<div class="exp-salary">📊 학점 ${e.gpa}</div>`:''}
+          <div class="exp-title">${esc(e.school)}</div>
+          <div class="exp-sub">${esc([e.major,e.degree].filter(Boolean).join(' · '))}</div>
+          <div class="exp-period">📅 ${esc(e.start_month)||''} ~ ${esc(e.end_month)||''}${e.status?' · '+esc(e.status):''}</div>
+          ${e.gpa?`<div class="exp-salary">📊 학점 ${esc(e.gpa)}</div>`:''}
         </div>`).join('')}` : ''}
 
         <!-- 경력 -->
         ${careers?.length ? `<div style="font-size:13px;font-weight:700;margin-bottom:8px;margin-top:14px;color:#534AB7">경력 ${totalCareerIv?`<span style="font-size:11px;font-weight:500;color:#534AB7;background:#EEEDFE;padding:2px 8px;border-radius:20px;margin-left:6px">총 ${totalCareerIv}</span>`:''}</div>
         ${careers.map(c => c.is_no_experience ? '<div class="exp-card"><div class="exp-title">신입 / 경력 없음</div></div>'
           : `<div class="exp-card">
-              <div class="exp-title">${c.company||'-'}</div>
-              <div class="exp-sub">${[c.department,c.position,c.employment_type].filter(Boolean).join(' · ')}</div>
-              <div class="exp-period">📅 ${c.start_month||''} ~ ${c.is_current?'현재':c.end_month||''}</div>
+              <div class="exp-title">${esc(c.company)||'-'}</div>
+              <div class="exp-sub">${esc([c.department,c.position,c.employment_type].filter(Boolean).join(' · '))}</div>
+              <div class="exp-period">📅 ${esc(c.start_month)||''} ~ ${c.is_current?'현재':esc(c.end_month)||''}</div>
               ${c.final_salary?`<div class="exp-salary">💰 최종연봉 ${c.final_salary.toLocaleString()}만원</div>`:''}
-              ${c.description?`<div class="exp-desc">${c.description}</div>`:''}
+              ${c.description?`<div class="exp-desc">${esc(c.description)}</div>`:''}
             </div>`).join('')}` : ''}
 
         <!-- 자격증 -->
         ${certs?.length ? `<div style="font-size:13px;font-weight:700;margin-bottom:8px;margin-top:14px;color:#534AB7">자격증</div>
         ${certs.map(c=>`<div class="exp-card">
-          <div class="exp-title">${c.name}</div>
-          <div class="exp-sub">${[c.issuer,c.acquired_date].filter(Boolean).join(' · ')}</div>
+          <div class="exp-title">${esc(c.name)}</div>
+          <div class="exp-sub">${esc([c.issuer,c.acquired_date].filter(Boolean).join(' · '))}</div>
         </div>`).join('')}` : ''}
 
         <!-- 수상 -->
         ${awards?.length ? `<div style="font-size:13px;font-weight:700;margin-bottom:8px;margin-top:14px;color:#534AB7">수상</div>
         ${awards.map(a=>`<div class="exp-card">
-          <div class="exp-title">${a.title||a.name||'-'}</div>
-          <div class="exp-sub">${[a.organization,a.awarded_date].filter(Boolean).join(' · ')}</div>
+          <div class="exp-title">${esc(a.title||a.name)||'-'}</div>
+          <div class="exp-sub">${esc([a.organization,a.awarded_date].filter(Boolean).join(' · '))}</div>
         </div>`).join('')}` : ''}
 
         <!-- 어학 -->
         ${langs?.length ? `<div style="font-size:13px;font-weight:700;margin-bottom:8px;margin-top:14px;color:#534AB7">어학</div>
         ${langs.map(l=>`<div class="exp-card">
-          <div class="exp-title">${l.language} ${l.test_name||''}</div>
-          <div class="exp-sub">${[l.score,l.level].filter(Boolean).join(' · ')}</div>
+          <div class="exp-title">${esc(l.language)} ${esc(l.test_name)||''}</div>
+          <div class="exp-sub">${esc([l.score,l.level].filter(Boolean).join(' · '))}</div>
         </div>`).join('')}` : ''}
 
         <!-- 자기소개서 -->
@@ -4879,7 +4904,7 @@ async function renderInterviewSession(app) {
         ].filter(([,v])=>v).map(([q,a])=>`
           <div class="exp-card" style="margin-bottom:10px">
             <div style="font-size:12px;font-weight:600;color:#534AB7;margin-bottom:6px">${q}</div>
-            <div style="font-size:13px;color:#333;line-height:1.7;white-space:pre-wrap">${a}</div>
+            <div style="font-size:13px;color:#333;line-height:1.7;white-space:pre-wrap">${esc(a)}</div>
           </div>`).join('')}` : ''}
       </div>
 
@@ -4910,7 +4935,7 @@ async function renderInterviewSession(app) {
           <div style="margin-top:12px">
             <div style="font-size:12px;font-weight:600;margin-bottom:6px">의견</div>
             <textarea id="evalComment" rows="4" placeholder="면접 중 특이사항, 인상적인 점 등을 기록하세요"
-              style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px;resize:vertical">${ev.comment||''}</textarea>
+              style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px;resize:vertical">${esc(ev.comment||'')}</textarea>
           </div>
           <div style="margin-top:8px">
             <div style="font-size:12px;font-weight:600;margin-bottom:6px">추천 의견</div>
@@ -5006,11 +5031,11 @@ async function loadOtherEvals() {
   el.innerHTML = evals.map(e => `
     <div style="border-bottom:0.5px solid var(--border);padding:8px 0">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="font-weight:600">${e.admin_profiles?.name||'-'}</span>
-        <span style="color:${e.recommendation==='합격'?'#27500A':e.recommendation==='불합격'?'#A32D2D':'#7A3D00'};font-weight:600">${e.recommendation||'-'}</span>
+        <span style="font-weight:600">${esc(e.admin_profiles?.name)||'-'}</span>
+        <span style="color:${e.recommendation==='합격'?'#27500A':e.recommendation==='불합격'?'#A32D2D':'#7A3D00'};font-weight:600">${esc(e.recommendation)||'-'}</span>
       </div>
       <div style="font-size:11px;color:#444">종합: ${scoreLabel(e.score_overall)}</div>
-      ${e.comment?`<div style="font-size:11px;color:#666;margin-top:3px">${e.comment}</div>`:''}
+      ${e.comment?`<div style="font-size:11px;color:#666;margin-top:3px">${esc(e.comment)}</div>`:''}
     </div>`).join('');
 }
 
@@ -5197,13 +5222,13 @@ async function loadSchedulePanel() {
     <div style="padding:14px;background:#FEF3E2;border-radius:var(--rsm);margin-bottom:16px">
       <div style="font-size:12px;color:#B25C00;font-weight:700;margin-bottom:6px">⚠️ 참석 불가 응답 — 제시된 일정에 참석할 수 없음</div>
       <div style="font-size:13px;color:#1a1a1a;line-height:1.6;white-space:pre-line"><b>지원자가 남긴 가능 일정:</b>
-${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
+${esc(selectedSlot.available_dates || '-')}</div>
       <div style="font-size:11px;color:#8A6A30;margin-top:8px">위 일정을 참고해 새 후보 시간을 확정하고 다시 발송해 주세요.</div>
     </div>`
   : (selectedSlot && selectedSlot.response_type === 'declined') ? `
     <div style="padding:14px;background:#FCEBEB;border-radius:var(--rsm);margin-bottom:16px">
       <div style="font-size:12px;color:#A32D2D;font-weight:700;margin-bottom:6px">❌ 미참석 응답 — 면접에 참석하지 않음</div>
-      <div style="font-size:13px;color:#1a1a1a">사유: <b>${selectedSlot.decline_reason || '-'}</b>${selectedSlot.decline_detail ? ' — ' + String(selectedSlot.decline_detail).replace(/</g,'&lt;') : ''}</div>
+      <div style="font-size:13px;color:#1a1a1a">사유: <b>${esc(selectedSlot.decline_reason) || '-'}</b>${selectedSlot.decline_detail ? ' — ' + esc(selectedSlot.decline_detail) : ''}</div>
       <div style="font-size:11px;color:#A32D2D;margin-top:8px">필요 시 불합격 처리 또는 개별 연락을 진행해 주세요.</div>
     </div>`
   : '';
@@ -5217,7 +5242,7 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
           <div style="display:flex;align-items:center;justify-content:space-between">
             <div>
               <div class="slot-time">${formatSlotDate(s.slot_date)} ${formatSlotTime(s.slot_time)}</div>
-              ${s.slot_location?`<div class="slot-location">📍 ${s.slot_location}</div>`:''}
+              ${s.slot_location?`<div class="slot-location">📍 ${esc(s.slot_location)}</div>`:''}
               ${selectedSlot?.slot_id===s.id?'<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:2px">✓ 지원자 선택</div>':''}
             </div>
             ${isSuperAdmin&&!_selDone?`<div style="display:flex;gap:4px;flex-shrink:0"><button class="btn btn-sm" onclick="editSlotLocation('${s.id}')">📍 장소</button><button class="btn btn-sm btn-danger" onclick="removeSlot('${s.id}')">삭제</button></div>`:''}
@@ -5251,7 +5276,7 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
                 <span style="font-size:11px;white-space:nowrap;color:#333">~ 종료</span>
                 <input type="time" id="slotEnd_${i}" value="11:00" style="flex:1;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px">
               </div>
-              <input type="text" id="slotLoc_${i}" value="${(_schedDateLoc(d) || _schedDefaultLoc()).replace(/"/g,'&quot;')}" placeholder="장소 (예: 본사 2층 회의실A)" style="width:100%;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;box-sizing:border-box">
+              <input type="text" id="slotLoc_${i}" value="${esc(_schedDateLoc(d) || _schedDefaultLoc())}" placeholder="장소 (예: 본사 2층 회의실A)" style="width:100%;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;box-sizing:border-box">
             </div>`).join('')}
           <button class="btn btn-primary btn-sm" style="width:100%;margin-top:4px" onclick="addSlotsByDate()">+ ${_schedSelectedDates.size}개 날짜 추가</button>
         </div>` : `<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px">캘린더에서 날짜를 클릭하세요 (여러 개 가능)</div>`}
@@ -5264,8 +5289,8 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
             <div class="slot-card" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:4px${conflictWith?';background:#FCEBEB;border-color:#A32D2D40':''}">
               <div>
                 <div class="slot-time" style="font-size:13px">${formatSlotDate(s.slot_date)} ${formatSlotTime(s.slot_time)}${s.slot_time_end?' ~ '+formatSlotTime(s.slot_time_end):''}</div>
-                ${s.slot_location?`<div class="slot-location">${s.slot_location}</div>`:''}
-                ${conflictWith?`<div style="font-size:11px;color:#A32D2D;font-weight:600;margin-top:2px">⛔ 면접관 일정 중복 (${conflictWith})</div>`:''}
+                ${s.slot_location?`<div class="slot-location">${esc(s.slot_location)}</div>`:''}
+                ${conflictWith?`<div style="font-size:11px;color:#A32D2D;font-weight:600;margin-top:2px">⛔ 면접관 일정 중복 (${esc(conflictWith)})</div>`:''}
               </div>
               <div style="display:flex;gap:4px">
                 ${conflictWith
@@ -5299,7 +5324,7 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
               </div>
               <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#333;cursor:pointer">
                 <input type="checkbox" id="availLocDefault_${i}" checked onchange="toggleAvailLoc(${i}, this.checked)" style="width:14px;height:14px;accent-color:var(--accent)">
-                공고 면접 장소에서 진행${_schedDefaultLoc() ? ` (${_schedDefaultLoc().replace(/</g,'&lt;')})` : ''}
+                공고 면접 장소에서 진행${_schedDefaultLoc() ? ` (${esc(_schedDefaultLoc())})` : ''}
               </label>
               <input type="text" id="availLoc_${i}" placeholder="이날 계신 장소 직접 입력 (예: 판교지점 3층)" style="display:none;width:100%;margin-top:6px;padding:6px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;box-sizing:border-box">
             </div>`).join('')}
@@ -5308,7 +5333,7 @@ ${(selectedSlot.available_dates || '-').replace(/</g,'&lt;')}</div>
       <div style="margin-top:8px">
         ${_schedAvailability.filter(a=>a.admin_id===myId).map(a=>`
           <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border:0.5px solid var(--border);border-radius:var(--rxs);margin-bottom:4px;font-size:12px">
-            <span>${formatSlotDate(a.slot_date)} ${formatSlotTime(a.slot_time)}${a.slot_time_end?' ~ '+formatSlotTime(a.slot_time_end):''}${a.location?` <span style="color:#B25C00">· 📍 ${a.location}</span>`:''}</span>
+            <span>${formatSlotDate(a.slot_date)} ${formatSlotTime(a.slot_time)}${a.slot_time_end?' ~ '+formatSlotTime(a.slot_time_end):''}${a.location?` <span style="color:#B25C00">· 📍 ${esc(a.location)}</span>`:''}</span>
             <button class="btn btn-sm btn-danger" style="padding:2px 8px;font-size:11px" onclick="removeMyAvailability('${a.id}')">삭제</button>
           </div>`).join('')}
       </div>
@@ -5362,7 +5387,7 @@ function buildOverlapSection(allInterviewers) {
       ${allInterviewers.map(iv => {
         const myAvail = _schedAvailability.filter(a => a.admin_id === iv.admin_id);
         return `<div style="display:flex;justify-content:space-between;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);margin-bottom:4px;font-size:12px">
-          <span style="font-weight:500">${iv.admin_profiles?.name||'-'}</span>
+          <span style="font-weight:500">${esc(iv.admin_profiles?.name)||'-'}</span>
           <span style="color:${myAvail.length?'var(--accent)':'var(--text3)'}">${myAvail.length}개 입력${myAvail.length?'':' (미입력)'}</span>
         </div>`;
       }).join('')}
@@ -5375,7 +5400,7 @@ function buildOverlapSection(allInterviewers) {
     ${allInterviewers.map(iv => {
       const cnt = _schedAvailability.filter(a => a.admin_id === iv.admin_id).length;
       return `<div style="display:flex;justify-content:space-between;padding:6px 8px;border:0.5px solid var(--border);border-radius:var(--rxs);margin-bottom:4px;font-size:12px">
-        <span style="font-weight:500">${iv.admin_profiles?.name||'-'}</span>
+        <span style="font-weight:500">${esc(iv.admin_profiles?.name)||'-'}</span>
         <span style="color:${cnt?'var(--accent)':'var(--text3)'}">${cnt}개 입력</span>
       </div>`;
     }).join('')}
@@ -5419,7 +5444,7 @@ function buildOverlapSection(allInterviewers) {
       const alreadyAdded = _schedSlots.some(s => s.slot_date === date);
       return `<div style="border:1.5px solid #F5CFA0;background:#FEF3E2;border-radius:var(--rsm);padding:10px;margin-bottom:6px">
         <div style="font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:4px">${formatSlotDate(date)}</div>
-        <div style="font-size:11px;color:#7A3D00;margin-bottom:4px">${names.join(', ')} 가능</div>
+        <div style="font-size:11px;color:#7A3D00;margin-bottom:4px">${esc(names.join(', '))} 가능</div>
         <div style="font-size:12px;font-weight:600;color:#534AB7;margin-bottom:6px">🔗 겹치는 시간: ${overlapStr}</div>
         ${alreadyAdded
           ? `<div style="font-size:11px;color:#3B6D11;font-weight:600">✓ 슬롯 추가됨</div>`

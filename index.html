@@ -1536,21 +1536,32 @@ async function saveSubtables() {
   await sb.from('language_skills').delete().eq('application_id', applicationId);
   const langs = (fd.extra.langs||[]).filter(l=>l.language).map(l=>({application_id:applicationId,language:l.language,test_name:l.test||null,score:l.score||null,acquired_month:l.date||null,conversation_level:l.level||null}));
   if(langs.length) await sb.from('language_skills').insert(langs);
-  // 개인정보 동의 기록 저장 (아래 SQL로 컬럼 추가 시 실제 저장됨. 컬럼 없으면 조용히 무시)
+  // 개인정보 동의 기록 저장 (실패 시 1회 재시도 + 경고 표시 — 동의 증빙은 분쟁 시 회사의 입증 근거)
   await saveConsent(applicationId);
 }
 
 // 개인정보 동의 이력을 applications 행에 기록 (분쟁 대비 법적 근거)
+// ⚠️ 저장 실패를 조용히 무시하지 않는다: 1회 재시도 후에도 실패하면 콘솔에 남기고 사용자에게 알린다.
+//    (applications 테이블에 privacy_consent_required/optional/sensitive/privacy_consent_at 컬럼이 반드시 있어야 함)
 async function saveConsent(appId) {
   if (!appId || !_privacyConsent) return;
-  try {
-    await sb.from('applications').update({
-      privacy_consent_required: _privacyConsent.required,
-      privacy_consent_optional: _privacyConsent.optional,
-      privacy_consent_sensitive: _privacyConsent.sensitive,
-      privacy_consent_at: _privacyConsent.at
-    }).eq('id', appId);
-  } catch(e) {}
+  const payload = {
+    privacy_consent_required: _privacyConsent.required,
+    privacy_consent_optional: _privacyConsent.optional,
+    privacy_consent_sensitive: _privacyConsent.sensitive,
+    privacy_consent_at: _privacyConsent.at
+  };
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const { error } = await sb.from('applications').update(payload).eq('id', appId);
+      if (!error) return; // 저장 성공
+      console.error(`동의 이력 저장 실패 (시도 ${attempt}/2):`, error.message);
+    } catch(e) {
+      console.error(`동의 이력 저장 실패 (시도 ${attempt}/2):`, e);
+    }
+  }
+  // 2회 모두 실패 → 지원 흐름은 막지 않되 반드시 표면화
+  showToast('⚠️ 개인정보 동의 기록 저장에 실패했습니다. 관리자에게 문의해 주세요.');
 }
 
 // ── 완료 화면 ────────────────────────────────────────────
