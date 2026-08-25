@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>면접 일정 선택 | 엘앤티렉서스(주)</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="./emailjs.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Pretendard',-apple-system,sans-serif;background:#F5F4F0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -174,32 +173,8 @@ function selectSlot(id) {
 }
 
 
-const EMAILJS_PUBLIC_KEY = '64df6f1LLxOFIWkIQ';
-const EMAILJS_SERVICE_ID = 'service_lntlexusrecruit';
-const EMAILJS_TEMPLATE_INTERVIEW = 'template_ju4wzpu';
-if (window.emailjs) emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
-
-// 이메일 발송용 성명 마스킹 (개인정보 국외이전 방지 — 해외 이메일 중계사 경유 시 실명 미포함)
-function maskName(n) {
-  n = String(n || '').trim();
-  if (n.length <= 1) return n || '지원자';
-  if (n.length === 2) return n[0] + '○';
-  return n[0] + '○'.repeat(n.length - 2) + n[n.length - 1];
-}
-
-async function sendInterviewerEmails(recipients, applicantName, jobTitle, round, dateStr, timeStr) {
-  // 이메일 발송 (EmailJS는 공개키 기반이라 클라이언트 발송 유지)
-  try {
-    for (const r of (recipients || [])) {
-      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_INTERVIEW, {
-        email: r.email, to_name: r.name || '담당자',
-        applicant_name: maskName(applicantName), job_title: jobTitle || '',
-        interview_round: round, interview_date: dateStr, interview_time: timeStr
-      });
-    }
-  } catch(e) { console.log('알림 발송 실패:', e); }
-  // 잔디 발송은 confirm-interview-slot 함수(서버)에서 처리 → 여기서 직접 호출하지 않음
-}
+// 담당자 알림: 잔디(JANDI)로만 발송 — confirm-interview-slot 함수(서버)에서 처리
+// (EmailJS 제거: 공개키 악용 위험 + 개인정보 국외이전 이슈 원천 차단, 2026-08-25)
 
 async function confirmSelection() {
   if (!selectedSlotId) return;
@@ -219,9 +194,7 @@ async function confirmSelection() {
   const timeText = slot.querySelector('.slot-time').textContent;
   const locText = slot.querySelector('.slot-location')?.textContent.replace(/^📍\s*/,'') || '';
   showSuccess(dateText, timeText, locText);
-
-  // 면접관들에게 확정 알림 발송 (수신자 목록은 서버에서 이미 검증/계산되어 내려옴)
-  sendInterviewerEmails(data.recipients, data.applicantName, data.jobTitle, data.round, dateText, timeText);
+  // 면접관 확정 알림은 confirm-interview-slot 함수(서버)가 잔디로 발송함
 }
 
 // 확정된 면접 일정을 크게 보여주는 카드 (날짜·시간·장소)

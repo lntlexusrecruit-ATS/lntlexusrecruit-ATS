@@ -8,7 +8,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./chart.umd.min.js"></script>
 <script src="./chartjs-plugin-datalabels.min.js"></script>
-<script src="./emailjs.min.js"></script>
 <script src="./pizzip.js"></script>
 <script src="./docxtemplater.js"></script>
 <script>
@@ -4043,16 +4042,10 @@ async function saveDispatchAdmin() {
 
 
 // ══════════════════════════════════════════════════════
-// EmailJS 알림 발송
+// 담당자 알림 — 잔디(JANDI)로만 발송
+// (EmailJS 제거: 공개키 악용 위험 + 개인정보 국외이전 이슈 원천 차단, 2026-08-25)
 // ══════════════════════════════════════════════════════
-const EMAILJS_PUBLIC_KEY = '64df6f1LLxOFIWkIQ';
-const EMAILJS_SERVICE_ID = 'service_lntlexusrecruit';
-const EMAILJS_TEMPLATE_REVIEW = 'template_b77545d';   // 검토 요청
-const EMAILJS_TEMPLATE_INTERVIEW = 'template_ju4wzpu'; // 면접 확정
-
-if (window.emailjs) emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
-
-// 잔디(JANDI) 개인 알림 발송 헬퍼
+// 잔디(JANDI) 개인 알림 발송 헬퍼 (Edge Function 경유 — 키가 클라이언트에 노출되지 않음)
 const SEND_JANDI_URL = 'https://qiekooojogqifgzqagnb.supabase.co/functions/v1/send-jandi';
 const SUPABASE_ANON_KEY = 'sb_publishable_rxoD0FpAJ_fonVDTCZAfgg_jGZnMLQu';
 
@@ -4067,15 +4060,6 @@ async function sendJandi(emails, body, info) {
       body: JSON.stringify({ emails, body, connectColor: '#534AB7', info: info || [] })
     });
   } catch(e) { console.log('잔디 발송 실패:', e); }
-}
-
-// 이메일 발송용 성명 마스킹 (개인정보 국외이전 방지 — 해외 이메일 중계사 경유 시 실명 미포함)
-// 예: 김지인 → 김○인, 김진 → 김○, John → J○○n / 상세 정보는 관리자 페이지·잔디(국내)에서 확인
-function maskName(n) {
-  n = String(n || '').trim();
-  if (n.length <= 1) return n || '지원자';
-  if (n.length === 2) return n[0] + '○';
-  return n[0] + '○'.repeat(n.length - 2) + n[n.length - 1];
 }
 
 // 검토 요청 알림 (관리자검토 단계 이동 시)
@@ -4093,15 +4077,7 @@ async function notifyReviewRequired(jobId, applicantName, jobTitle) {
     });
     if (!recipients.size) return;
 
-    // 이메일 발송
-    for (const [email, name] of recipients) {
-      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_REVIEW, {
-        email, to_name: name || '담당자',
-        applicant_name: maskName(applicantName), job_title: jobTitle || ''
-      });
-    }
-
-    // 잔디 발송 (같은 대상에게)
+    // 잔디 발송
     sendJandi(
       [...recipients.keys()],
       `📋 서류 검토가 필요한 지원자가 있습니다`,
@@ -4123,13 +4099,12 @@ async function notifyInterviewConfirmed(jobId, applicantName, jobTitle, round, d
     });
     if (!recipients.size) return;
 
-    for (const [email, name] of recipients) {
-      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_INTERVIEW, {
-        email, to_name: name || '담당자',
-        applicant_name: maskName(applicantName), job_title: jobTitle || '',
-        interview_round: round, interview_date: dateStr, interview_time: timeStr
-      });
-    }
+    // 잔디 발송
+    sendJandi(
+      [...recipients.keys()],
+      `📅 ${round}차 면접 일정이 확정되었습니다`,
+      [{ title: `${jobTitle||''} - ${applicantName}님`, description: `${dateStr} ${timeStr} · 관리자 페이지에서 상세를 확인해 주세요.` }]
+    );
   } catch(e) { console.log('알림 발송 실패:', e); }
 }
 
