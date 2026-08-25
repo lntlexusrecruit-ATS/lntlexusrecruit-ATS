@@ -776,6 +776,7 @@ function applyToJob(id, title, dept, type) {
   jobPostingId = id;
   jobTitle = title;
   applicationId = null; // 새 공고 → 이 공고의 draft를 새로 찾도록 초기화
+  _privacyConsent = null; // 지원서(공고)별로 개인정보 동의를 새로 받음
   window.scrollTo({ top: 0 });
   if (currentUser) {
     // 이미 로그인 → 지원 현황으로 (하단에 이 공고 지원 버튼이 뜸)
@@ -874,6 +875,7 @@ function goBackToJobs() {
 function selectJob(id, title, dept, type) {
   jobPostingId = id;
   jobTitle = title;
+  _privacyConsent = null; // 지원서(공고)별로 개인정보 동의를 새로 받음
   document.getElementById('jobBadge').textContent = title;
   document.getElementById('viewJobSelect').classList.add('hidden');
   document.getElementById('viewAuth').classList.remove('hidden');
@@ -1161,6 +1163,7 @@ async function continueDraft(appId, jobId, title) {
   applicationId = appId;
   jobPostingId = jobId || null;
   jobTitle = title || '';
+  _privacyConsent = null; // 이어서 작성할 때도 해당 지원서에 대한 동의를 다시 확인
   document.getElementById('jobBadge').textContent = title || '지원서';
   showForm();
 }
