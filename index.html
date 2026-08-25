@@ -232,6 +232,12 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
   .lp-detail-title { font-size:26px; }
   .complete-card { max-width:100%; }
 }
+/* 동의 모달: 넓은 화면에선 2단(내용 좌 / 체크 우)으로 한눈에, 좁은 화면에선 1단 스크롤 */
+@media (max-width:900px) {
+  #consentGrid { grid-template-columns: 1fr !important; }
+  /* 모바일: 주의 박스를 체크박스보다 위로 (체크 전에 반드시 보이도록) */
+  #consentNotice { order:-1; margin-top:0 !important; margin-bottom:14px; }
+}
 </style>
 </head>
 <body>
@@ -511,12 +517,14 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
 
 <!-- 개인정보 수집·이용·제공 동의 (지원서 작성 전 필수) -->
 <div id="consentModal" style="display:none;position:fixed;inset:0;z-index:350;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;padding:16px;">
-  <div style="background:#fff;border-radius:16px;max-width:660px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+  <div style="background:#fff;border-radius:16px;max-width:1060px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
     <div style="padding:22px 26px;border-bottom:0.5px solid var(--border);">
       <div style="font-size:18px;font-weight:700;">개인정보 수집·이용·제공 동의서</div>
       <div style="font-size:12px;color:var(--text3);margin-top:4px;">지원서 작성 전 아래 내용을 확인하고 동의해 주세요. (필수 항목 미동의 시 지원 불가) · <a href="./privacy.html" target="_blank" rel="noopener" style="color:var(--accent);">개인정보 처리방침 전문 보기</a></div>
     </div>
     <div style="padding:20px 26px;overflow:auto;font-size:13px;color:var(--text2);line-height:1.75;">
+      <div id="consentGrid" style="display:grid;grid-template-columns:1.15fr 1fr;gap:22px;align-items:start;">
+      <div>
       <p style="margin-bottom:16px;">엘앤티렉서스(주)와의 채용절차와 관련하여 「개인정보 보호법」에 따라 본인의 개인정보를 아래와 같이 수집·이용하는 것에 동의합니다.</p>
       <div style="border:0.5px solid var(--border2);border-radius:10px;overflow:hidden;font-size:12.5px;">
         <div style="display:flex;border-bottom:0.5px solid var(--border);"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">목적</div><div style="padding:10px 12px;">채용 절차의 진행 및 관리, 경력·자격 등 확인(조회 및 검증), 채용 여부의 결정</div></div>
@@ -524,8 +532,10 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
         <div style="display:flex;border-bottom:0.5px solid var(--border);"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">보유·이용기간</div><div style="padding:10px 12px;">동의일부터 채용절차 종료 시까지 보유·이용하며, 이후 지체 없이 파기합니다. (불합격자 서류는 채용절차법에 따라 반환 청구 가능)</div></div>
         <div style="display:flex;"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">거부 권리</div><div style="padding:10px 12px;">필수 정보는 채용 심사에 필요한 최소한의 정보로, 미동의 시 지원이 제한됩니다. 선택·민감정보 동의는 자유롭게 거부할 수 있으며 거부해도 지원이 가능합니다. 다만 미동의한 항목은 지원서에 입력할 수 없고 심사에 반영되지 않으며, 그 외의 불이익은 없습니다.</div></div>
       </div>
+      </div>
 
-      <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
+      <div id="consentRight" style="display:flex;flex-direction:column;">
+      <div style="display:flex;flex-direction:column;gap:10px;">
         <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--border2);border-radius:10px;cursor:pointer;background:var(--surface2);">
           <input type="checkbox" id="consentAll" onchange="toggleAllConsent(this)" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;">
           <span style="font-weight:600;color:var(--text);">전체 동의</span>
@@ -544,12 +554,14 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
         </label>
       </div>
 
-      <div style="margin-top:16px;padding:14px 16px;background:#FAEEDA;border:1px solid #E8C88F;border-radius:10px;">
+      <div id="consentNotice" style="margin-top:16px;padding:14px 16px;background:#FAEEDA;border:1px solid #E8C88F;border-radius:10px;">
         <div style="font-size:13px;font-weight:700;color:#854F0B;margin-bottom:6px;">⚠️ 선택·민감정보 미동의 시 안내</div>
         <div style="font-size:12.5px;color:#5F4A1E;line-height:1.7;">
           동의하지 않은 항목은 지원서에서 <b>입력칸이 표시되지 않아 기재할 수 없으며</b>, 채용 담당자는 <b>해당 정보를 심사에 반영할 수 없습니다</b>.<br>
           동의하지 않아도 지원은 가능하며, 그 외의 불이익은 없습니다.
         </div>
+      </div>
+      </div>
       </div>
     </div>
     <div style="padding:14px 26px;border-top:0.5px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
