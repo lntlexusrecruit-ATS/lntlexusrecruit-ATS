@@ -520,9 +520,9 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
       <p style="margin-bottom:16px;">엘앤티렉서스(주)와의 채용절차와 관련하여 「개인정보 보호법」에 따라 본인의 개인정보를 아래와 같이 수집·이용하는 것에 동의합니다.</p>
       <div style="border:0.5px solid var(--border2);border-radius:10px;overflow:hidden;font-size:12.5px;">
         <div style="display:flex;border-bottom:0.5px solid var(--border);"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">목적</div><div style="padding:10px 12px;">채용 절차의 진행 및 관리, 경력·자격 등 확인(조회 및 검증), 채용 여부의 결정</div></div>
-        <div style="display:flex;border-bottom:0.5px solid var(--border);"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">수집항목</div><div style="padding:10px 12px;"><b>[필수]</b> 성명, 생년월일, 국적, 주소·거주지, 이메일, 전화·휴대폰 등 연락처<br><b>[선택]</b> 학력, 어학·자격, 보훈·장애, 병역, 경력, 자기소개, 신체(사진), 기타 지원서 기재정보</div></div>
+        <div style="display:flex;border-bottom:0.5px solid var(--border);"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">수집항목</div><div style="padding:10px 12px;"><b>[필수]</b> 성명, 생년월일, 국적, 주소·거주지, 이메일, 전화·휴대폰 등 연락처 및 심사자료(학력, 경력, 자격·어학, 자기소개, 증명사진, 입사 가능일 등 근무조건)<br><b>[선택]</b> 보훈 여부, 병역, 수상·대외활동, 취미·특기, 포트폴리오·링크<br><b>[민감(선택)]</b> 장애 관련 정보(장애 등록자에 한함)</div></div>
         <div style="display:flex;border-bottom:0.5px solid var(--border);"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">보유·이용기간</div><div style="padding:10px 12px;">동의일부터 채용절차 종료 시까지 보유·이용하며, 이후 지체 없이 파기합니다. (불합격자 서류는 채용절차법에 따라 반환 청구 가능)</div></div>
-        <div style="display:flex;"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">거부 권리</div><div style="padding:10px 12px;">필수 정보 동의는 채용 심사를 위해 필수이며, 미동의 시 지원이 제한됩니다. 선택·민감정보 동의는 거부할 수 있고, 거부해도 지원은 가능하나 심사에 참고되지 않을 수 있습니다.</div></div>
+        <div style="display:flex;"><div style="flex:0 0 92px;background:var(--surface2);padding:10px 12px;font-weight:600;">거부 권리</div><div style="padding:10px 12px;">필수 정보는 채용 심사에 필요한 최소한의 정보로, 미동의 시 지원이 제한됩니다. 선택·민감정보 동의는 자유롭게 거부할 수 있으며 거부해도 지원이 가능합니다. 다만 미동의한 항목은 지원서에 입력할 수 없고 심사에 반영되지 않으며, 그 외의 불이익은 없습니다.</div></div>
       </div>
 
       <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
@@ -532,16 +532,24 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
         </label>
         <label style="display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border:1px solid var(--border2);border-radius:10px;cursor:pointer;">
           <input type="checkbox" id="consentRequired" onchange="updateConsentBtn()" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;">
-          <span><b style="color:var(--accent);">[필수]</b> 필수적 정보(성명·생년월일·국적·주소·연락처 등)의 수집·이용에 동의합니다.</span>
+          <span><b style="color:var(--accent);">[필수]</b> 인적사항·연락처 및 심사자료(학력·경력·자격·어학·자기소개·증명사진)의 수집·이용에 동의합니다.</span>
         </label>
         <label style="display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border:1px solid var(--border2);border-radius:10px;cursor:pointer;">
           <input type="checkbox" id="consentOptional" onchange="updateConsentBtn()" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;">
-          <span>[선택] 선택적 정보(학력·경력·자격·어학·자기소개 등)의 수집·이용에 동의합니다.</span>
+          <span>[선택] 선택적 정보(보훈·병역·수상·취미·특기·포트폴리오)의 수집·이용에 동의합니다.<br><span style="font-size:12px;color:var(--text3);">미동의 시 해당 항목은 입력할 수 없고 심사에 반영되지 않습니다.</span></span>
         </label>
         <label style="display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border:1px solid var(--border2);border-radius:10px;cursor:pointer;">
           <input type="checkbox" id="consentSensitive" onchange="updateConsentBtn()" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;">
           <span>[선택] 민감정보(건강·장애 관련, 장애 등록자에 한함)의 수집·이용에 동의합니다.</span>
         </label>
+      </div>
+
+      <div style="margin-top:16px;padding:14px 16px;background:#FAEEDA;border:1px solid #E8C88F;border-radius:10px;">
+        <div style="font-size:13px;font-weight:700;color:#854F0B;margin-bottom:6px;">⚠️ 선택·민감정보 미동의 시 안내</div>
+        <div style="font-size:12.5px;color:#5F4A1E;line-height:1.7;">
+          동의하지 않은 항목은 지원서에서 <b>입력칸이 표시되지 않아 기재할 수 없으며</b>, 채용 담당자는 <b>해당 정보를 심사에 반영할 수 없습니다</b>.<br>
+          동의하지 않아도 지원은 가능하며, 그 외의 불이익은 없습니다.
+        </div>
       </div>
     </div>
     <div style="padding:14px 26px;border-top:0.5px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
@@ -868,6 +876,8 @@ let jobPostingId = JOB_POSTING_ID;
 let jobTitle = '';
 let skills = [];
 let _privacyConsent = null; // 개인정보 동의 상태 {required, optional, sensitive, at}
+function _optConsented(){ return !!(_privacyConsent && _privacyConsent.optional); }   // 선택정보 동의 여부
+function _senConsented(){ return !!(_privacyConsent && _privacyConsent.sensitive); }  // 민감정보 동의 여부
 
 const fd = {
   basic:{}, education:[{}], career:[{}],
@@ -1463,25 +1473,25 @@ function buildPayload(isDraft) {
     essay_achievement: fd.essay.q3||null, // 성취/실패경험
     essay_effort: fd.essay.q4||null,      // 노력/계획
     essay_motivation: fd.essay.q5||null,  // 지원동기/포부
-    link_github: fd.extra?.github||null,
-    link_linkedin: fd.extra?.linkedin||null,
-    link_blog: fd.extra?.blog||null,
-    link_portfolio: fd.extra?.portfolio||null,
-    portfolio_file_url: fd.extra?.portfolioFileUrl||null,
+    link_github: _optConsented() ? (fd.extra?.github||null) : null,
+    link_linkedin: _optConsented() ? (fd.extra?.linkedin||null) : null,
+    link_blog: _optConsented() ? (fd.extra?.blog||null) : null,
+    link_portfolio: _optConsented() ? (fd.extra?.portfolio||null) : null,
+    portfolio_file_url: _optConsented() ? (fd.extra?.portfolioFileUrl||null) : null,
     photo_url: fd.basic.photoUrl||null,
-    veterans_status: fd.basic.veterans||'비해당',
-    veterans_number: fd.basic.veteransNum||null,
+    veterans_status: _optConsented() ? (fd.basic.veterans||'비해당') : '비해당',
+    veterans_number: _optConsented() ? (fd.basic.veteransNum||null) : null,
     disability_status: (_privacyConsent&&_privacyConsent.sensitive) ? (fd.basic.disability||'비해당') : '비해당',
     disability_type: (_privacyConsent&&_privacyConsent.sensitive) ? (fd.basic.disabilityType||null) : null,
     disability_grade: (_privacyConsent&&_privacyConsent.sensitive) ? (fd.basic.disabilityGrade||null) : null,
     disability_number: (_privacyConsent&&_privacyConsent.sensitive) ? (fd.basic.disabilityNum||null) : null,
-    military_status: fd.basic.military||null,
-    military_branch: fd.basic.militaryBranch||null,
-    military_rank: fd.basic.militaryRank||null,
-    military_period: fd.basic.militaryPeriod||null,
-    military_exemption: fd.basic.militaryExemption||null,
-    hobby: fd.basic.hobby||null,
-    specialty: fd.basic.specialty||null,
+    military_status: _optConsented() ? (fd.basic.military||null) : null,
+    military_branch: _optConsented() ? (fd.basic.militaryBranch||null) : null,
+    military_rank: _optConsented() ? (fd.basic.militaryRank||null) : null,
+    military_period: _optConsented() ? (fd.basic.militaryPeriod||null) : null,
+    military_exemption: _optConsented() ? (fd.basic.militaryExemption||null) : null,
+    hobby: _optConsented() ? (fd.basic.hobby||null) : null,
+    specialty: _optConsented() ? (fd.basic.specialty||null) : null,
   };
 }
 
@@ -1503,9 +1513,9 @@ async function saveSubtables() {
   await sb.from('certifications').delete().eq('application_id', applicationId);
   const certs = (fd.extra.certs||[]).filter(c=>c.name).map(c=>({application_id:applicationId,name:c.name,issuer:c.issuer||null,acquired_month:c.date||null}));
   if(certs.length) await sb.from('certifications').insert(certs);
-  // 수상
+  // 수상 (선택정보 동의 시에만 저장)
   await sb.from('awards').delete().eq('application_id', applicationId);
-  const awards = (fd.extra.awards||[]).filter(a=>a.name).map(a=>({application_id:applicationId,name:a.name,organization:a.org||null,period:a.period||null,category:a.category||'수상'}));
+  const awards = _optConsented() ? (fd.extra.awards||[]).filter(a=>a.name).map(a=>({application_id:applicationId,name:a.name,organization:a.org||null,period:a.period||null,category:a.category||'수상'})) : [];
   if(awards.length) await sb.from('awards').insert(awards);
   // 어학
   await sb.from('language_skills').delete().eq('application_id', applicationId);
@@ -1598,6 +1608,7 @@ function validateStep(step){
     for(const [k,label] of need){
       if(!b[k]||!String(b[k]).trim()){ showToast(`'${label}'을(를) 입력해 주세요`); return false; }
     }
+    if(!b.photoUrl){ showToast('증명사진을 업로드해 주세요'); return false; }
     return true;
   }
   if(step===1){
@@ -1641,12 +1652,15 @@ function prevStep(){collectStep();if(currentStep>0){currentStep--;buildStep(curr
 // ── Step 0: 기본정보 ─────────────────────────────────────
 function buildBasic(){
   const d=fd.basic,w=document.createElement('div');
+  // 동의하지 않은 범주의 입력칸은 아예 표시하지 않음 (동의 범위 = 수집 범위 강제 일치)
+  const _optOK = !!(_privacyConsent && _privacyConsent.optional);   // 선택정보 동의
+  const _senOK = !!(_privacyConsent && _privacyConsent.sensitive);  // 민감정보 동의
   w.innerHTML=`
   <div class="form-card">
-    <div class="card-title"><span class="card-title-icon">📷</span>증명사진</div>
+    <div class="card-title"><span class="card-title-icon">📷</span>증명사진 <span class="required">*</span></div>
     <div class="photo-upload" onclick="document.getElementById('photoInput').click()">
       <div class="photo-circle" id="photoPreview">🙂</div>
-      <div><div style="font-size:13px;font-weight:500;">사진 업로드</div><div style="font-size:11px;color:var(--text3);margin-top:2px;">JPG, PNG · 최대 5MB · 3×4cm 규격 권장</div></div>
+      <div><div style="font-size:13px;font-weight:500;">사진 업로드 (필수)</div><div style="font-size:11px;color:var(--text3);margin-top:2px;">JPG, PNG · 최대 5MB · 3×4cm 규격 권장</div></div>
     </div>
     <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="previewPhoto(this)">
   </div>
@@ -1689,13 +1703,16 @@ function buildBasic(){
       </div>
       <div class="field-hint">예: React, TypeScript, Node.js …</div>
     </div>
+    ${_optOK?`
     <div class="field-row">
       <div class="field"><label class="field-label">특기</label><input type="text" id="f_specialty" value="${d.specialty||''}" placeholder="예: 영상편집, 악기연주"></div>
       <div class="field"><label class="field-label">취미</label><input type="text" id="f_hobby" value="${d.hobby||''}" placeholder="예: 독서, 등산"></div>
-    </div>
+    </div>`:''}
   </div>
+  ${(_optOK||_senOK)?`
   <div class="form-card">
-    <div class="card-title"><span class="card-title-icon">🎖️</span>보훈 · 장애 · 병역</div>
+    <div class="card-title"><span class="card-title-icon">🎖️</span>${[_optOK?'보훈 · 병역':'',_senOK?'장애':''].filter(Boolean).join(' · ')}</div>
+    ${_optOK?`
     <div class="field">
       <label class="field-label">보훈 여부</label>
       <div class="radio-group" id="veteransGroup">
@@ -1704,7 +1721,8 @@ function buildBasic(){
       <div id="veteransDetail" style="display:${d.veterans==='해당'?'block':'none'};margin-top:8px">
         <input type="text" id="f_veteransNum" value="${d.veteransNum||''}" placeholder="보훈번호" style="width:100%;padding:10px 12px;border:0.5px solid var(--border2);border-radius:var(--radius-xs);font-size:13px;font-family:'Pretendard',sans-serif">
       </div>
-    </div>
+    </div>`:''}
+    ${_senOK?`
     <div class="field" style="margin-top:14px">
       <label class="field-label">장애 여부</label>
       <div class="radio-group" id="disabilityGroup">
@@ -1717,7 +1735,8 @@ function buildBasic(){
         </div>
         <input type="text" id="f_disabilityNum" value="${d.disabilityNum||''}" placeholder="장애인등록번호" style="width:100%;padding:10px 12px;border:0.5px solid var(--border2);border-radius:var(--radius-xs);font-size:13px;font-family:'Pretendard',sans-serif;margin-top:8px">
       </div>
-    </div>
+    </div>`:''}
+    ${_optOK?`
     <div class="field" style="margin-top:14px">
       <label class="field-label">군필 여부</label>
       <div class="radio-group" id="militaryGroup">
@@ -1733,8 +1752,8 @@ function buildBasic(){
       <div id="militaryDetail_면제" style="display:${d.military==='면제'?'block':'none'};margin-top:8px">
         <input type="text" id="f_militaryExemption" value="${d.militaryExemption||''}" placeholder="면제사유" style="width:100%;padding:10px 12px;border:0.5px solid var(--border2);border-radius:var(--radius-xs);font-size:13px;font-family:'Pretendard',sans-serif">
       </div>
-    </div>
-  </div>`;
+    </div>`:''}
+  </div>`:''}`;
   return w;
 }
 
@@ -1804,15 +1823,18 @@ function buildExtra(){
   const cc=mk('form-card');cc.innerHTML='<div class="card-title"><span class="card-title-icon">📜</span>자격증</div>';
   const cw=mk('');cw.id='certWrap';(fd.extra.certs||[{}]).forEach((c,i)=>cw.appendChild(mkCertEntry(c,i)));
   cc.appendChild(cw);const ca=mkAddBtn('+ 자격증 추가',()=>{if(!fd.extra.certs)fd.extra.certs=[];if(fd.extra.certs.length>=4){showToast('자격증은 최대 4개까지 입력 가능합니다');return;}fd.extra.certs.push({});cw.appendChild(mkCertEntry({},fd.extra.certs.length-1));});cc.appendChild(ca);w.appendChild(cc);
-  // 수상
-  const ac=mk('form-card');ac.innerHTML='<div class="card-title"><span class="card-title-icon">🏆</span>수상 및 대외활동</div>';
-  const aw=mk('');aw.id='awardWrap';(fd.extra.awards||[{}]).forEach((a,i)=>aw.appendChild(mkAwardEntry(a,i)));
-  ac.appendChild(aw);const aa=mkAddBtn('+ 수상·활동 추가',()=>{if(!fd.extra.awards)fd.extra.awards=[];fd.extra.awards.push({});aw.appendChild(mkAwardEntry({},fd.extra.awards.length-1));});ac.appendChild(aa);w.appendChild(ac);
+  // 수상 (선택정보 동의 시에만 표시)
+  if (_optConsented()) {
+    const ac=mk('form-card');ac.innerHTML='<div class="card-title"><span class="card-title-icon">🏆</span>수상 및 대외활동</div>';
+    const aw=mk('');aw.id='awardWrap';(fd.extra.awards||[{}]).forEach((a,i)=>aw.appendChild(mkAwardEntry(a,i)));
+    ac.appendChild(aw);const aa=mkAddBtn('+ 수상·활동 추가',()=>{if(!fd.extra.awards)fd.extra.awards=[];fd.extra.awards.push({});aw.appendChild(mkAwardEntry({},fd.extra.awards.length-1));});ac.appendChild(aa);w.appendChild(ac);
+  }
   // 어학
   const lc=mk('form-card');lc.innerHTML='<div class="card-title"><span class="card-title-icon">🌐</span>어학</div>';
   const lw=mk('');lw.id='langWrap';(fd.extra.langs||[]).forEach((l,i)=>lw.appendChild(mkLangEntry(l,i)));
   lc.appendChild(lw);const la=mkAddBtn('+ 어학 추가',()=>{if(!fd.extra.langs)fd.extra.langs=[];if(fd.extra.langs.length>=4){showToast('어학은 최대 4개까지 입력 가능합니다');return;}fd.extra.langs.push({});lw.appendChild(mkLangEntry({},fd.extra.langs.length-1));});lc.appendChild(la);w.appendChild(lc);
-  // 링크
+  // 링크 (선택정보 동의 시에만 표시)
+  if (!_optConsented()) return w;
   const pc=mk('form-card');pc.innerHTML=`<div class="card-title"><span class="card-title-icon">🔗</span>포트폴리오 / 링크</div>
   <div class="field-row"><div class="field"><label class="field-label">GitHub</label><input type="url" id="f_gh" value="${fd.extra.github||''}" placeholder="https://github.com/username"></div><div class="field"><label class="field-label">LinkedIn</label><input type="url" id="f_li" value="${fd.extra.linkedin||''}" placeholder="https://linkedin.com/in/username"></div></div>
   <div class="field-row"><div class="field"><label class="field-label">블로그/홈페이지</label><input type="url" id="f_bl" value="${fd.extra.blog||''}" placeholder="https://myblog.com"></div><div class="field"><label class="field-label">포트폴리오 URL</label><input type="url" id="f_pf" value="${fd.extra.portfolio||''}" placeholder="https://portfolio.com"></div></div>
