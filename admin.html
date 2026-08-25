@@ -4787,7 +4787,7 @@ async function renderInterviewSession(app) {
       '지원 직무 관련 실무지식 확인 질문',
       '직무 수행 중 어려웠던 문제를 해결한 경험을 말씀해주세요'
     ]).map(q => ({ sec: '직무역량', q })),
-    { sec: '공통역량', q: '전직장의 장단점은 무엇이라고 생각하는가?' },
+    { sec: '공통역량', q: '본인의 장단점은 무엇이라고 생각하는가?' },
     { sec: '공통역량', q: `${_roleNoun}으로서 갖춰야 할 덕목 또는 소양은 무엇이라고 생각하는가?` },
     { sec: '공통역량', q: _jobCat === '관리' ? '고객과 현업부서(내부 고객)란 사무직원에게 어떤 존재라고 생각하는가?' : `고객이란 ${_roleNoun}에게 어떤 존재라고 생각하는가?` },
     { sec: '자유질문', q: '면접관 자유질문 1', free: true },
@@ -5001,10 +5001,13 @@ async function renderInterviewSession(app) {
               <div style="display:flex;gap:4px">${_obsBtns(o.key, window._evalQ.obs[o.key])}</div>
             </div>`).join('')}
 
-          <!-- 합계 -->
-          <div style="display:flex;justify-content:space-between;align-items:center;background:#EEEDFE;border-radius:var(--rxs);padding:10px 14px;margin:12px 0">
-            <span style="font-size:13px;font-weight:700;color:#3C3489">합계</span>
-            <span style="font-size:18px;font-weight:800;color:#3C3489"><span id="evalTotalDisplay">0</span> <span style="font-size:12px;font-weight:500">/ 150점</span></span>
+          <!-- 합계 + 항목별 평균 -->
+          <div style="background:#EEEDFE;border-radius:var(--rxs);padding:10px 14px;margin:12px 0">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:13px;font-weight:700;color:#3C3489">합계</span>
+              <span style="font-size:18px;font-weight:800;color:#3C3489"><span id="evalTotalDisplay">0</span> <span style="font-size:12px;font-weight:500">/ 150점</span></span>
+            </div>
+            <div id="evalSecAvgDisplay" style="font-size:11px;color:#4540A0;margin-top:6px;line-height:1.6"></div>
           </div>
 
           <div style="margin-top:12px">
@@ -5069,9 +5072,28 @@ function calcEvalTotal() {
   const o = Object.values(window._evalQ?.obs || {}).reduce((a,b)=>a+(b||0), 0);
   return q + o;
 }
+// 섹션(자기표현력/조직몰입/직무역량/공통역량/자유질문)별 평균 — 채점된 문항만 대상
+function calcSectionAvgs() {
+  const qs = window._evalQuestionsCache || [];
+  const bySec = {};
+  qs.forEach((item, i) => {
+    const s = window._evalQ?.scores?.[i];
+    if (s == null) return;
+    if (!bySec[item.sec]) bySec[item.sec] = { sum: 0, n: 0 };
+    bySec[item.sec].sum += s; bySec[item.sec].n++;
+  });
+  return Object.entries(bySec).map(([sec, v]) => ({ sec, avg: Math.round(v.sum / v.n * 10) / 10 }));
+}
 function updateEvalTotal() {
   const el = document.getElementById('evalTotalDisplay');
   if (el) el.textContent = calcEvalTotal();
+  const avgEl = document.getElementById('evalSecAvgDisplay');
+  if (avgEl) {
+    const avgs = calcSectionAvgs();
+    avgEl.innerHTML = avgs.length
+      ? '항목별 평균 (10점 만점) · ' + avgs.map(a => `<b>${a.sec}</b> ${a.avg}`).join(' · ')
+      : '';
+  }
 }
 
 let _evalRecommendation = null;
@@ -5088,7 +5110,23 @@ function setRecommendation(val) {
 
 async function saveEvaluation() {
   const col = _ivSessionIsDispatch ? 'dispatch_candidate_id' : 'application_id';
-  const comment = document.getElementById('evalComment')?.value || '';
+  const comment = (document.getElementById('evalComment')?.value || '').trim();
+  // ── 저장 전 필수 검증 ──
+  // ① 면접관 의견 필수
+  if (!comment) {
+    showToast('⚠️ 면접관 의견을 작성해야 저장할 수 있습니다');
+    document.getElementById('evalComment')?.focus();
+    return;
+  }
+  // ② 자유질문 최소 1개: 질문 내용 입력 + 채점 완료
+  const qs = window._evalQuestionsCache || [];
+  const freeDone = qs.some((item, i) =>
+    item.free && (window._evalQ.freeTexts[i] || '').trim() && window._evalQ.scores[i] != null
+  );
+  if (!freeDone) {
+    showToast('⚠️ 면접관 자유질문을 최소 1개 작성하고 채점해 주세요');
+    return;
+  }
   const total = calcEvalTotal();
   // 질문 원문 + 점수를 함께 기록 (직군별 질문이 바뀌어도 당시 평가 내용이 보존됨)
   const items = (window._evalQuestionsCache || []).map((item, i) => ({
@@ -5106,6 +5144,7 @@ async function saveEvaluation() {
       scores: window._evalQ.scores,
       freeTexts: window._evalQ.freeTexts,
       obs: window._evalQ.obs,
+      sectionAvgs: calcSectionAvgs(),
       total
     },
     // 구버전 호환: 합계를 5점 척도로 환산해 score_overall에도 기록 (평가현황·통계 연동)
@@ -5148,6 +5187,7 @@ async function loadOtherEvals() {
         <span style="color:${e.recommendation==='합격'?'#27500A':e.recommendation==='불합격'?'#A32D2D':'#7A3D00'};font-weight:600">${esc(e.recommendation)||'-'}</span>
       </div>
       <div style="font-size:11px;color:#444">${e.question_scores?.total != null ? `합계: <b>${e.question_scores.total}</b> / 150점` : `종합: ${scoreLabel(e.score_overall)}`}</div>
+      ${(e.question_scores?.sectionAvgs||[]).length?`<div style="font-size:10px;color:#666;margin-top:2px;line-height:1.5">${e.question_scores.sectionAvgs.map(a=>`${esc(a.sec)} ${a.avg}`).join(' · ')}</div>`:''}
       ${e.comment?`<div style="font-size:11px;color:#666;margin-top:3px">${esc(e.comment)}</div>`:''}
     </div>`).join('');
 }
