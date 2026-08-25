@@ -1650,13 +1650,20 @@ async function openJobForm(jobId = null) {
     document.getElementById('jCategory').value = '';
   }
   // 이 공고에 접근 가능한 manager 목록 (슈퍼어드민 + 배정된 manager)
+  // ⚠️ allAdmins는 '관리자 관리' 페이지를 열어야 채워지므로, 비어 있으면 여기서 직접 로드
+  //    (안 하면 공고 폼을 먼저 열었을 때 면접관 목록이 빈 화면으로 나오는 버그 발생)
+  if (!allAdmins.length) {
+    const { data: _adm } = await sb.from('admin_profiles').select('*').order('created_at');
+    allAdmins = _adm || [];
+  }
   let assignedManagerIds = [];
   if (jobId) {
     const { data: assignedPerms } = await sb.from('admin_job_permissions').select('admin_id').eq('job_posting_id', jobId);
     assignedManagerIds = (assignedPerms||[]).map(p => p.admin_id);
   }
   const eligibleManagers = allAdmins.filter(a =>
-    a.role === 'superadmin' || (a.role === 'manager' && (!jobId || assignedManagerIds.includes(a.id)))
+    a.is_active !== false && // 비활성 관리자는 면접관 지정 목록에서 제외
+    (a.role === 'superadmin' || (a.role === 'manager' && (!jobId || assignedManagerIds.includes(a.id))))
   );
   const makeIvCheckbox = (el, existingIds, name) => {
     if (!el) return;
