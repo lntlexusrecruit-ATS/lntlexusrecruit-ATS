@@ -4752,24 +4752,69 @@ async function renderInterviewSession(app) {
   const passBtn = `<button class="iv-pass-btn" style="background:#EAF3DE;color:#27500A" onclick="ivDecision('pass')">✅ 합격</button>`;
   const failBtn = `<button class="iv-pass-btn" style="background:#FCEBEB;color:#A32D2D" onclick="ivDecision('fail')">❌ 불합격</button>`;
 
-  const renderStars = (field, val) => {
-    return [1,2,3,4,5].map(n =>
-      `<span class="eval-star" onclick="setEvalScore('${field}',${n})" id="star_${field}_${n}">${n <= (val||0) ? '⭐' : '☆'}</span>`
-    ).join('');
-  };
-
   const ev = myEval || {};
 
-  // ── 직군별 평가표 ──────────────────────────────────────
-  // 공통역량 4개(태도·인상, 의사소통, 성장가능성, 종합평가)는 전 직군 동일,
-  // 직무역량 1개(score_knowledge 컬럼)만 공고의 직군(job_category)에 따라 라벨·설명이 바뀐다.
-  const JOB_EVAL_LABELS = {
-    '영업':   { label: '영업역량',    hint: '고객지향 · 설득력 · 목표달성 의지' },
-    '관리':   { label: '직무 전문성', hint: '정확성·꼼꼼함 · 행정처리 · 협업' },
-    '서비스': { label: '기술역량',    hint: '정비지식·자격 · 안전의식 · 문제해결' },
-  };
+  // ── 직군별 면접 평가표 (종이 양식 이관: 문항별 2~10점 × 15문항 = 150점 + 관찰 부가점수) ──
+  // 자기표현력·조직몰입·자유질문은 전 직군 공통, 직무역량 3문항과 공통역량 문구만 직군별로 다름.
   const _jobCat = app?.job_postings?.job_category || null;
-  const _knowledgeMeta = JOB_EVAL_LABELS[_jobCat] || { label: '직무지식', hint: '' };
+  const EVAL_JOB_QUESTIONS = {
+    '영업': [
+      '본인의 판매/영업 방식 또는 판매 노하우 등에 대해 자세히 이야기해주세요',
+      '금융/보험지식 관련 질문 ex) 할부/리스, 자동차보험 설계 및 체결 경험?',
+      '"렉서스" 차량을 판매하기 위한 킬링 포인트를 제시해본다면?'
+    ],
+    '관리': [
+      '지금까지 담당한 사무·관리 업무의 범위와 그중 가장 자신 있는 업무를 구체적으로 설명해주세요',
+      '실무지식 관련 질문 ex) 엑셀 활용 수준, 전표·정산·계약·보고서 등 본인이 처리해본 업무?',
+      '여러 업무가 동시에 몰렸을 때 우선순위를 정해 처리한 실제 사례를 말씀해주세요'
+    ],
+    '서비스': [
+      '수행 가능한 정비 범위(경정비~중정비)와 보유 자격증, 다뤄본 진단장비를 구체적으로 설명해주세요',
+      '실무지식 관련 질문 ex) 하이브리드·고전압 시스템 취급 경험, 수입차 정비 경험?',
+      '원인 진단이 어려웠던 고장을 해결한 경험을 구체적으로 말씀해주세요'
+    ],
+  };
+  const EVAL_ROLE_NOUN = { '영업': '영업직원', '관리': '사무직원', '서비스': '정비직원' };
+  const _roleNoun = EVAL_ROLE_NOUN[_jobCat] || '해당 직무 담당자';
+  // 15개 채점 문항 (섹션, 질문) — 순서 고정 (question_scores 저장 시 index 기준)
+  const EVAL_QUESTIONS = [
+    { sec: '자기표현력', q: '본인 소개 및 당사에 지원하신 동기를 말씀해주세요' },
+    { sec: '자기표현력', q: '본인의 경력 전반을 간략하게 설명해주세요' },
+    { sec: '자기표현력', q: '각각의 회사에 대한 이직 사유는 무엇인가요?' },
+    { sec: '조직몰입',   q: '우리 회사에 대해 얼마나 알고 있나요?' },
+    ...(EVAL_JOB_QUESTIONS[_jobCat] || [
+      '담당해온 직무의 범위와 그중 가장 자신 있는 업무를 구체적으로 설명해주세요',
+      '지원 직무 관련 실무지식 확인 질문',
+      '직무 수행 중 어려웠던 문제를 해결한 경험을 말씀해주세요'
+    ]).map(q => ({ sec: '직무역량', q })),
+    { sec: '공통역량', q: '전직장의 장단점은 무엇이라고 생각하는가?' },
+    { sec: '공통역량', q: `${_roleNoun}으로서 갖춰야 할 덕목 또는 소양은 무엇이라고 생각하는가?` },
+    { sec: '공통역량', q: _jobCat === '관리' ? '고객과 현업부서(내부 고객)란 사무직원에게 어떤 존재라고 생각하는가?' : `고객이란 ${_roleNoun}에게 어떤 존재라고 생각하는가?` },
+    { sec: '자유질문', q: '면접관 자유질문 1', free: true },
+    { sec: '자유질문', q: '면접관 자유질문 2', free: true },
+    { sec: '자유질문', q: '면접관 자유질문 3', free: true },
+    { sec: '자유질문', q: '면접관 자유질문 4', free: true },
+    { sec: '자유질문', q: '면접관 자유질문 5', free: true },
+  ];
+  const EVAL_OBSERVATIONS = [
+    { key: 'attitude', label: '태도',        hint: '지나치게 긴장하거나 해이하지 않고, 단정하며 침착하다' },
+    { key: 'impress',  label: '인상',        hint: '표정과 자세가 안정적이고 신뢰감을 준다' },
+    { key: 'dialog',   label: '인성 및 대화', hint: '밝고 사교적이며 답변 내용이 충실하다' },
+  ];
+  window._evalQuestionsCache = EVAL_QUESTIONS; // 저장 시 질문 원문 기록용
+  window._evalJobCat = _jobCat;
+  // 기존 저장된 평가 불러오기 (question_scores jsonb)
+  const _saved = ev.question_scores || {};
+  window._evalQ = {
+    scores: { ...( _saved.scores || {} ) },       // {문항index: 2|4|6|8|10}
+    freeTexts: { ...( _saved.freeTexts || {} ) }, // {문항index: 질문 텍스트}
+    obs: { ...( _saved.obs || {} ) },             // {attitude|impress|dialog: -2..2}
+  };
+  _evalRecommendation = ev.recommendation || null; // 저장된 추천의견 유지 (재저장 시 초기화 방지)
+  const _scoreBtns = (i, cur) => [2,4,6,8,10].map(v =>
+    `<button class="btn btn-sm evq-btn" id="evq_${i}_${v}" onclick="setQScore(${i},${v})" style="flex:1;padding:5px 0;font-size:12px;${cur===v?'background:var(--accent);color:#fff;border-color:var(--accent)':''}">${v}</button>`).join('');
+  const _obsBtns = (key, cur) => [-2,-1,0,1,2].map(v =>
+    `<button class="btn btn-sm evo-btn" id="evo_${key}_${v}" onclick="setObsScore('${key}',${v})" style="flex:1;padding:5px 0;font-size:12px;${cur===v?'background:var(--accent);color:#fff;border-color:var(--accent)':''}">${v>0?'+'+v:v}</button>`).join('');
 
   // 총 경력 계산
   const calcAgeVal2 = (birth) => {
@@ -4910,28 +4955,60 @@ async function renderInterviewSession(app) {
       <div class="iv-eval-panel">
         <div class="eval-card">
           <div class="eval-title">📝 면접 평가표 (${_ivSessionRound}차)${_jobCat?` <span style="font-size:11px;font-weight:600;background:#EEEDFE;color:#534AB7;padding:2px 10px;border-radius:20px;vertical-align:middle">${esc(_jobCat)}직군</span>`:''}</div>
-          <div class="eval-row">
-            <div class="eval-label">태도/인상</div>
-            <div class="eval-stars" id="stars_attitude">${renderStars('attitude', ev.score_attitude)}</div>
+
+          <!-- 면접 순서 안내 -->
+          <div style="font-size:11px;color:var(--text3);background:var(--surface2);border-radius:var(--rxs);padding:8px 10px;margin-bottom:10px;line-height:1.6">
+            <b>면접 순서</b> ① 면접관·회사 소개 → ② Ice-breaking → ③ 면접 질문 → ④ 이후 절차 안내 (소요기간·결과 통보)
           </div>
-          <div class="eval-row">
-            <div class="eval-label">의사소통</div>
-            <div class="eval-stars" id="stars_communication">${renderStars('communication', ev.score_communication)}</div>
+
+          <!-- 금지질문 안내 (채용절차법 제4조의3) -->
+          <div style="font-size:11px;background:#FCEBEB;border:1px solid #E8B4B4;border-radius:var(--rxs);padding:8px 10px;margin-bottom:12px;line-height:1.6;color:#7A2222">
+            <b>⛔ 면접 금지질문 (채용절차법 제4조의3)</b><br>
+            ① 용모·키·체중 등 신체에 관한 질문 ② 출신지역·혼인여부·재산, 직계존비속·형제자매의 학력·직업·재산에 관한 질문<br>
+            <span style="font-size:10px">위반 시 과태료: 1회 300만원 / 2회 400만원 / 3회 이상 500만원 (동법 제17조)</span>
           </div>
-          <div class="eval-row">
-            <div class="eval-label" title="${esc(_knowledgeMeta.hint)}">${esc(_knowledgeMeta.label)}${_knowledgeMeta.hint?`<div style="font-size:10px;font-weight:400;color:var(--text3);line-height:1.3">${esc(_knowledgeMeta.hint)}</div>`:''}</div>
-            <div class="eval-stars" id="stars_knowledge">${renderStars('knowledge', ev.score_knowledge)}</div>
+
+          <!-- 채점 문항 (섹션별) -->
+          ${(() => {
+            let html = '', lastSec = '';
+            EVAL_QUESTIONS.forEach((item, i) => {
+              if (item.sec !== lastSec) {
+                lastSec = item.sec;
+                html += `<div style="font-size:12px;font-weight:700;color:#534AB7;margin:14px 0 6px;padding-left:8px;border-left:3px solid #534AB7">${item.sec}${item.sec==='직무역량'&&_jobCat?` <span style="font-weight:500;color:var(--text3)">(${esc(_jobCat)})</span>`:''}</div>`;
+              }
+              const cur = window._evalQ.scores[i];
+              if (item.free) {
+                html += `<div style="margin-bottom:8px">
+                  <input type="text" id="evqfree_${i}" value="${esc(window._evalQ.freeTexts[i]||'')}" placeholder="${esc(item.q)} (질문 내용 입력)" onchange="window._evalQ.freeTexts[${i}]=this.value"
+                    style="width:100%;padding:6px 8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:12px;margin-bottom:4px;font-family:'Pretendard',sans-serif">
+                  <div style="display:flex;gap:4px">${_scoreBtns(i, cur)}</div>
+                </div>`;
+              } else {
+                html += `<div style="margin-bottom:8px">
+                  <div style="font-size:12px;color:#333;line-height:1.5;margin-bottom:4px">${esc(item.q)}</div>
+                  <div style="display:flex;gap:4px">${_scoreBtns(i, cur)}</div>
+                </div>`;
+              }
+            });
+            return html;
+          })()}
+
+          <!-- 관찰 항목 (부가점수 -2~+2) -->
+          <div style="font-size:12px;font-weight:700;color:#534AB7;margin:14px 0 6px;padding-left:8px;border-left:3px solid #534AB7">관찰 항목 <span style="font-weight:500;color:var(--text3)">(부가점수)</span></div>
+          ${EVAL_OBSERVATIONS.map(o => `
+            <div style="margin-bottom:8px">
+              <div style="font-size:12px;color:#333;margin-bottom:4px"><b>${o.label}</b> — <span style="color:var(--text3)">${o.hint}</span></div>
+              <div style="display:flex;gap:4px">${_obsBtns(o.key, window._evalQ.obs[o.key])}</div>
+            </div>`).join('')}
+
+          <!-- 합계 -->
+          <div style="display:flex;justify-content:space-between;align-items:center;background:#EEEDFE;border-radius:var(--rxs);padding:10px 14px;margin:12px 0">
+            <span style="font-size:13px;font-weight:700;color:#3C3489">합계</span>
+            <span style="font-size:18px;font-weight:800;color:#3C3489"><span id="evalTotalDisplay">0</span> <span style="font-size:12px;font-weight:500">/ 150점</span></span>
           </div>
-          <div class="eval-row">
-            <div class="eval-label">성장가능성</div>
-            <div class="eval-stars" id="stars_potential">${renderStars('potential', ev.score_potential)}</div>
-          </div>
-          <div class="eval-row">
-            <div class="eval-label">종합평가</div>
-            <div class="eval-stars" id="stars_overall">${renderStars('overall', ev.score_overall)}</div>
-          </div>
+
           <div style="margin-top:12px">
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px">의견</div>
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px">면접관 의견</div>
             <textarea id="evalComment" rows="4" placeholder="면접 중 특이사항, 인상적인 점 등을 기록하세요"
               style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px;resize:vertical">${esc(ev.comment||'')}</textarea>
           </div>
@@ -4964,19 +5041,37 @@ async function renderInterviewSession(app) {
       </div>
     </div>`;
 
-  // 다른 면접관 평가 로드
+  // 다른 면접관 평가 로드 + 합계 초기 표시
+  updateEvalTotal();
   loadOtherEvals();
 }
 
-// 평가 점수 선택
-let _evalScores = {};
-function setEvalScore(field, val) {
-  _evalScores[field] = val;
-  const container = document.getElementById('stars_'+field);
-  if (!container) return;
-  container.querySelectorAll('.eval-star').forEach((star, i) => {
-    star.textContent = i < val ? '⭐' : '☆';
+// ── 문항 채점 (2~10점) ───────────────────────────────────
+function setQScore(i, v) {
+  window._evalQ.scores[i] = v;
+  [2,4,6,8,10].forEach(x => {
+    const b = document.getElementById(`evq_${i}_${x}`);
+    if (b) { b.style.background = x===v?'var(--accent)':''; b.style.color = x===v?'#fff':''; b.style.borderColor = x===v?'var(--accent)':''; }
   });
+  updateEvalTotal();
+}
+// 관찰 항목 (부가점수 -2~+2)
+function setObsScore(key, v) {
+  window._evalQ.obs[key] = v;
+  [-2,-1,0,1,2].forEach(x => {
+    const b = document.getElementById(`evo_${key}_${x}`);
+    if (b) { b.style.background = x===v?'var(--accent)':''; b.style.color = x===v?'#fff':''; b.style.borderColor = x===v?'var(--accent)':''; }
+  });
+  updateEvalTotal();
+}
+function calcEvalTotal() {
+  const q = Object.values(window._evalQ?.scores || {}).reduce((a,b)=>a+(b||0), 0);
+  const o = Object.values(window._evalQ?.obs || {}).reduce((a,b)=>a+(b||0), 0);
+  return q + o;
+}
+function updateEvalTotal() {
+  const el = document.getElementById('evalTotalDisplay');
+  if (el) el.textContent = calcEvalTotal();
 }
 
 let _evalRecommendation = null;
@@ -4994,15 +5089,27 @@ function setRecommendation(val) {
 async function saveEvaluation() {
   const col = _ivSessionIsDispatch ? 'dispatch_candidate_id' : 'application_id';
   const comment = document.getElementById('evalComment')?.value || '';
+  const total = calcEvalTotal();
+  // 질문 원문 + 점수를 함께 기록 (직군별 질문이 바뀌어도 당시 평가 내용이 보존됨)
+  const items = (window._evalQuestionsCache || []).map((item, i) => ({
+    sec: item.sec,
+    q: item.free ? (window._evalQ.freeTexts[i] || item.q) : item.q,
+    score: window._evalQ.scores[i] ?? null
+  }));
   const payload = {
     [col]: _ivSessionAppId,
     interview_round: _ivSessionRound,
     admin_id: currentAdmin.id,
-    score_attitude: _evalScores.attitude || null,
-    score_communication: _evalScores.communication || null,
-    score_knowledge: _evalScores.knowledge || null,
-    score_potential: _evalScores.potential || null,
-    score_overall: _evalScores.overall || null,
+    question_scores: {
+      category: window._evalJobCat || null,
+      items,
+      scores: window._evalQ.scores,
+      freeTexts: window._evalQ.freeTexts,
+      obs: window._evalQ.obs,
+      total
+    },
+    // 구버전 호환: 합계를 5점 척도로 환산해 score_overall에도 기록 (평가현황·통계 연동)
+    score_overall: total > 0 ? Math.min(5, Math.max(1, Math.round(total / 150 * 5))) : null,
     comment,
     recommendation: _evalRecommendation,
     updated_at: new Date().toISOString()
@@ -5010,7 +5117,15 @@ async function saveEvaluation() {
   const { error } = await sb.from('interview_evaluations').upsert(payload, {
     onConflict: `${col},interview_round,admin_id`
   });
-  if (error) { showToast('오류: '+error.message); return; }
+  if (error) {
+    // question_scores 컬럼이 아직 없는 DB 안내
+    if (/question_scores/.test(error.message)) {
+      showToast('⚠️ DB에 question_scores 컬럼이 없습니다. 안내된 SQL을 먼저 실행해 주세요.');
+    } else {
+      showToast('오류: '+error.message);
+    }
+    return;
+  }
   showToast('✓ 평가 저장 완료');
   loadOtherEvals();
 }
@@ -5032,7 +5147,7 @@ async function loadOtherEvals() {
         <span style="font-weight:600">${esc(e.admin_profiles?.name)||'-'}</span>
         <span style="color:${e.recommendation==='합격'?'#27500A':e.recommendation==='불합격'?'#A32D2D':'#7A3D00'};font-weight:600">${esc(e.recommendation)||'-'}</span>
       </div>
-      <div style="font-size:11px;color:#444">종합: ${scoreLabel(e.score_overall)}</div>
+      <div style="font-size:11px;color:#444">${e.question_scores?.total != null ? `합계: <b>${e.question_scores.total}</b> / 150점` : `종합: ${scoreLabel(e.score_overall)}`}</div>
       ${e.comment?`<div style="font-size:11px;color:#666;margin-top:3px">${esc(e.comment)}</div>`:''}
     </div>`).join('');
 }
