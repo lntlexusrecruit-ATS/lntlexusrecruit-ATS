@@ -4714,7 +4714,8 @@ async function icsAddToCalendar(appId) {
     ? String(slot.slot_time_end).slice(0, 5)
     : `${String(Math.min(23, parseInt(startTime) + 1)).padStart(2, '0')}:${startTime.slice(3)}`; // 종료 미정 시 1시간
   const subject = `[면접] ${app.name} (${round}차)`;
-  const body = `${app.job_postings?.title || ''} ${round}차 면접\n지원자: ${app.name}\n상세는 채용 관리자 페이지에서 확인해 주세요.`;
+  const adminUrl = window.location.href.split('#')[0].split('?')[0]; // 현재 관리자 페이지 주소
+  const body = `${app.job_postings?.title || ''} ${round}차 면접\n지원자: ${app.name}\n\n▶ 채용 관리자 페이지: ${adminUrl}\n(이력서·평가표는 위 페이지의 [면접 진행]에서 확인해 주세요)`;
   const params = new URLSearchParams({
     path: '/calendar/action/compose',
     rru: 'addevent',
