@@ -4673,18 +4673,40 @@ function ivCardHtml(app, slot) {
       <div class="iv-room-job">${esc(app.job_postings?.title)||'-'} ${app.job_postings?.department?'· '+esc(app.job_postings.department):''}</div>
       ${slot?.slot_location?`<div style="font-size:11px;color:#666;margin-top:2px">📍 ${esc(slot.slot_location)}</div>`:''}
     </div>
-    ${slot?`<button class="btn btn-sm" style="flex-shrink:0;margin-right:8px" onclick="event.stopPropagation();icsAddToCalendar('${app.id}')" title="Outlook 등 달력에 일정 추가">📅 Outlook 추가</button>`:''}
+    ${slot?`<button class="btn btn-sm" style="flex-shrink:0;margin-right:8px" onclick="event.stopPropagation();icsAddToCalendar('${app.id}')" title="면접관 전원 참석자로 포함된 Outlook 회의초대 파일 생성">📅 회의초대 만들기</button>`:''}
     <div class="iv-room-status" style="background:#EEEDFE;color:#534AB7">면접 시작 →</div>
   </div>`;
 }
 
-// ── 면접 일정 → 달력 파일(.ics) 다운로드 (Outlook·구글캘린더 호환) ──
-// 서버·메일 발송 없이 파일로 생성 → 더블클릭하면 Outlook에 일정 등록됨
-function icsAddToCalendar(appId) {
+// ── 면접 회의초대(.ics) 생성 — Outlook 회의초대용 ──────────────
+// 배정된 면접관 전원을 참석자(ATTENDEE)로 포함한 회의초대 파일을 만든다.
+// 사용법: 버튼 클릭 → 다운로드된 파일 열기 → Outlook 회의 폼에서 "전송"
+//        → 면접관 전원의 달력에 자동 표시 (서버·SMTP·본사 승인 불필요)
+async function icsAddToCalendar(appId) {
   const app = allApps.find(a => a.id === appId) || (window._dispatchCands||[]).find(c => c.id === appId);
   const slot = (window._ivSlotByApp || {})[appId];
   if (!app || !slot) { showToast('확정된 면접 일정이 없습니다'); return; }
   const round = app.stage === '2차면접' ? 2 : 1;
+
+  // 참석자: 공고 담당 관리자 + 해당 차수 면접관 (이메일 기준 중복 제거)
+  let attendees = [];
+  try {
+    const jobId = app.job_posting_id;
+    if (jobId) {
+      const ivTable = round === 2 ? 'job_interviewers_2nd' : 'job_interviewers';
+      const [{ data: perms }, { data: ivs }] = await Promise.all([
+        sb.from('admin_job_permissions').select('admin_profiles(name, email)').eq('job_posting_id', jobId),
+        sb.from(ivTable).select('admin_profiles(name, email)').eq('job_id', jobId)
+      ]);
+      const map = new Map();
+      [...(perms||[]), ...(ivs||[])].forEach(p => {
+        if (p.admin_profiles?.email) map.set(p.admin_profiles.email, p.admin_profiles.name || '');
+      });
+      map.delete(currentAdmin?.email); // 주최자(나)는 참석자 목록에서 제외
+      attendees = [...map.entries()].map(([email, name]) => ({ email, name }));
+    }
+  } catch(e) { console.log('참석자 조회 실패(참석자 없이 생성):', e); }
+
   const startTime = (slot.slot_time || '09:00').slice(0, 5);
   const start = new Date(`${slot.slot_date}T${startTime}:00+09:00`);
   const end = slot.slot_time_end
@@ -4692,16 +4714,21 @@ function icsAddToCalendar(appId) {
     : new Date(start.getTime() + 60 * 60 * 1000); // 종료 미정 시 1시간
   const fmt = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   const escICS = s => String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const organizerEmail = currentAdmin?.email || '';
+  const organizerName = adminProfile?.name || '채용담당자';
   const lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LNT LEXUS ATS//KR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LNT LEXUS ATS//KR', 'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST', // 회의초대 형식
     'BEGIN:VEVENT',
     `UID:${appId}-r${round}@lntlexus-ats`,
     `DTSTAMP:${fmt(new Date())}`,
     `DTSTART:${fmt(start)}`,
     `DTEND:${fmt(end)}`,
+    organizerEmail ? `ORGANIZER;CN=${escICS(organizerName)}:mailto:${organizerEmail}` : null,
+    ...attendees.map(at => `ATTENDEE;CN=${escICS(at.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${at.email}`),
     `SUMMARY:${escICS(`[면접] ${app.name} (${round}차)`)}`,
     slot.slot_location ? `LOCATION:${escICS(slot.slot_location)}` : null,
-    `DESCRIPTION:${escICS(`${app.job_postings?.title || ''} ${round}차 면접\n지원자: ${app.name}\n상세는 채용 관리자 페이지에서 확인`)}`,
+    `DESCRIPTION:${escICS(`${app.job_postings?.title || ''} ${round}차 면접\n지원자: ${app.name}\n상세는 채용 관리자 페이지에서 확인해 주세요.`)}`,
     'STATUS:CONFIRMED',
     'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:면접 30분 전 알림', 'END:VALARM',
     'END:VEVENT', 'END:VCALENDAR'
@@ -4709,9 +4736,11 @@ function icsAddToCalendar(appId) {
   const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `면접_${app.name}_${slot.slot_date}.ics`;
+  a.download = `면접초대_${app.name}_${slot.slot_date}.ics`;
   a.click(); URL.revokeObjectURL(a.href);
-  showToast('📅 달력 파일 다운로드 — 열면 Outlook에 등록됩니다');
+  showToast(attendees.length
+    ? `📅 회의초대 파일 생성 (참석자 ${attendees.length}명 포함) — 파일 열고 Outlook에서 [전송]을 눌러주세요`
+    : '📅 일정 파일 생성 — 파일을 열면 Outlook에 등록됩니다');
 }
 
 function renderIvList(sortedDates, byDate, todayStr) {
