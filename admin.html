@@ -4707,40 +4707,28 @@ async function icsAddToCalendar(appId) {
     }
   } catch(e) { console.log('참석자 조회 실패(참석자 없이 생성):', e); }
 
+  // Outlook 웹(OWA) 회의 작성 딥링크 — 데스크톱 Outlook의 .ics 제한을 우회
+  // 브라우저에서 회사 계정으로 로그인된 Outlook 웹이 열리며, 제목·일시·장소·참석자가 채워진 회의 폼이 뜸 → [보내기]만 클릭
   const startTime = (slot.slot_time || '09:00').slice(0, 5);
-  const start = new Date(`${slot.slot_date}T${startTime}:00+09:00`);
-  const end = slot.slot_time_end
-    ? new Date(`${slot.slot_date}T${slot.slot_time_end.slice(0,5)}:00+09:00`)
-    : new Date(start.getTime() + 60 * 60 * 1000); // 종료 미정 시 1시간
-  const fmt = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  const escICS = s => String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
-  const organizerEmail = currentAdmin?.email || '';
-  const organizerName = adminProfile?.name || '채용담당자';
-  const lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LNT LEXUS ATS//KR', 'CALSCALE:GREGORIAN',
-    'METHOD:REQUEST', // 회의초대 형식
-    'BEGIN:VEVENT',
-    `UID:${appId}-r${round}@lntlexus-ats`,
-    `DTSTAMP:${fmt(new Date())}`,
-    `DTSTART:${fmt(start)}`,
-    `DTEND:${fmt(end)}`,
-    organizerEmail ? `ORGANIZER;CN=${escICS(organizerName)}:mailto:${organizerEmail}` : null,
-    ...attendees.map(at => `ATTENDEE;CN=${escICS(at.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${at.email}`),
-    `SUMMARY:${escICS(`[면접] ${app.name} (${round}차)`)}`,
-    slot.slot_location ? `LOCATION:${escICS(slot.slot_location)}` : null,
-    `DESCRIPTION:${escICS(`${app.job_postings?.title || ''} ${round}차 면접\n지원자: ${app.name}\n상세는 채용 관리자 페이지에서 확인해 주세요.`)}`,
-    'STATUS:CONFIRMED',
-    'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:면접 30분 전 알림', 'END:VALARM',
-    'END:VEVENT', 'END:VCALENDAR'
-  ].filter(Boolean);
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `면접초대_${app.name}_${slot.slot_date}.ics`;
-  a.click(); URL.revokeObjectURL(a.href);
+  const endTime = slot.slot_time_end
+    ? String(slot.slot_time_end).slice(0, 5)
+    : `${String(Math.min(23, parseInt(startTime) + 1)).padStart(2, '0')}:${startTime.slice(3)}`; // 종료 미정 시 1시간
+  const subject = `[면접] ${app.name} (${round}차)`;
+  const body = `${app.job_postings?.title || ''} ${round}차 면접\n지원자: ${app.name}\n상세는 채용 관리자 페이지에서 확인해 주세요.`;
+  const params = new URLSearchParams({
+    path: '/calendar/action/compose',
+    rru: 'addevent',
+    subject,
+    startdt: `${slot.slot_date}T${startTime}:00`,
+    enddt: `${slot.slot_date}T${endTime}:00`,
+    body,
+  });
+  if (slot.slot_location) params.set('location', slot.slot_location);
+  if (attendees.length) params.set('to', attendees.map(at => at.email).join(','));
+  window.open('https://outlook.office.com/calendar/deeplink/compose?' + params.toString(), '_blank', 'noopener');
   showToast(attendees.length
-    ? `📅 회의초대 파일 생성 (참석자 ${attendees.length}명 포함) — 파일 열고 Outlook에서 [전송]을 눌러주세요`
-    : '📅 일정 파일 생성 — 파일을 열면 Outlook에 등록됩니다');
+    ? `📅 Outlook 웹에 회의 폼을 열었습니다 (참석자 ${attendees.length}명 포함) — 일시 확인 후 [보내기]를 눌러주세요`
+    : '📅 Outlook 웹에 회의 폼을 열었습니다 — 참석자 추가 후 [보내기]를 눌러주세요');
 }
 
 function renderIvList(sortedDates, byDate, todayStr) {
