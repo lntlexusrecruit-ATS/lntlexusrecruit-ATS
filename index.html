@@ -183,6 +183,20 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
 .lp-job-arrow { font-size:13px; font-weight:600; color:var(--lp-ink); white-space:nowrap; flex-shrink:0; border:1px solid var(--lp-line); border-radius:24px; padding:9px 18px; transition:all .18s; }
 .lp-job-card:hover .lp-job-arrow { background:var(--lp-ink); color:#fff; border-color:var(--lp-ink); }
 
+/* 직군별 3칸 공고 목록 */
+.lp-jobs { max-width:1200px; }
+.lp-jobs-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:18px; align-items:start; }
+.lp-jobs-col { background:var(--lp-ivory); border:1px solid var(--lp-line); border-radius:18px; padding:18px 16px; min-height:180px; }
+.lp-jobs-col-head { font-size:16px; font-weight:700; color:var(--lp-ink); margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+.lp-jobs-col-count { font-size:12px; font-weight:600; background:var(--lp-ink); color:#fff; border-radius:20px; padding:2px 10px; }
+.lp-jobs-col-empty { font-size:13px; color:var(--lp-ink3); text-align:center; padding:32px 8px; }
+.lp-jobs-col .lp-job-card { flex-direction:column; align-items:flex-start; gap:12px; padding:18px 20px; }
+.lp-jobs-col .lp-job-arrow { align-self:flex-end; }
+@media (max-width:900px) {
+  .lp-jobs-grid { grid-template-columns:1fr; }
+  .lp-jobs-col { min-height:0; }
+}
+
 /* 공고 상세 */
 .lp-detail-wrap { max-width:960px; margin:0 auto; padding:48px 24px 100px; display:grid; grid-template-columns:1fr 280px; gap:36px; align-items:start; }
 .lp-detail-main { min-width:0; }
@@ -696,19 +710,42 @@ async function loadLanding() {
     return;
   }
   _lpJobs = jobs;
-  list.innerHTML = jobs.map((j, i) => `
+
+  // ── 직군별 3칸 분리 (공고 등록 시 선택한 직군(job_category)이 자동 반영됨) ──
+  const CAT_GROUPS = [
+    { key: '영업',   label: '영업직', icon: '🚗' },
+    { key: '관리',   label: '관리직', icon: '🗂️' },
+    { key: '서비스', label: '정비직', icon: '🔧' },
+  ];
+  const jobCard = (j, i) => `
     <div class="lp-job-card reveal" style="--rvd:${Math.min(i, 5) * 0.07}s" onclick="showJobDetail('${j.id}')">
       <div style="min-width:0">
-        <div class="lp-job-title">${j.title}</div>
+        <div class="lp-job-title">${escapeHtml(j.title)}</div>
         <div class="lp-job-meta">
-          ${j.department?`<span>🏢 ${j.department}</span>`:''}
-          ${j.location?`<span>📍 ${j.location}</span>`:''}
-          ${j.employment_type?`<span>💼 ${j.employment_type}</span>`:''}
+          ${j.department?`<span>🏢 ${escapeHtml(j.department)}</span>`:''}
+          ${j.location?`<span>📍 ${escapeHtml(j.location)}</span>`:''}
+          ${j.employment_type?`<span>💼 ${escapeHtml(j.employment_type)}</span>`:''}
         </div>
       </div>
       <span class="lp-job-arrow">자세히 보기 →</span>
+    </div>`;
+  const etcJobs = jobs.filter(j => !CAT_GROUPS.some(g => g.key === j.job_category));
+  list.innerHTML = `
+    <div class="lp-jobs-grid">
+      ${CAT_GROUPS.map(g => {
+        const gj = jobs.filter(j => j.job_category === g.key);
+        return `<div class="lp-jobs-col">
+          <div class="lp-jobs-col-head">${g.icon} ${g.label} <span class="lp-jobs-col-count">${gj.length}</span></div>
+          ${gj.length
+            ? gj.map((j, i) => jobCard(j, i)).join('')
+            : '<div class="lp-jobs-col-empty">현재 모집 중인 공고가 없습니다</div>'}
+        </div>`;
+      }).join('')}
     </div>
-  `).join('');
+    ${etcJobs.length ? `
+      <div class="lp-jobs-col-head" style="margin-top:28px">📋 기타 모집 <span class="lp-jobs-col-count">${etcJobs.length}</span></div>
+      ${etcJobs.map((j, i) => jobCard(j, i)).join('')}` : ''}
+  `;
   bindReveals(list); // 새로 그린 공고 카드에 리빌 연결
 }
 
