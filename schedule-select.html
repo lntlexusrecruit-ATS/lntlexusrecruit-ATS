@@ -152,7 +152,7 @@ function showSlots(name, round, slots) {
     <div class="divider"></div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button class="btn" style="flex:1;background:#fff;border:1.5px solid #E8E7E2;color:#666;font-size:13px;padding:11px 8px;line-height:1.4;margin-top:0" onclick="showUnavailableForm()">참석 불가<br><span style="font-size:11px;color:#999">참석 가능한 시간이 없음</span></button>
-      <button class="btn" style="flex:1;background:#fff;border:1.5px solid #E8E7E2;color:#666;font-size:13px;padding:11px 8px;line-height:1.4;margin-top:0" onclick="showDeclineForm()">미참석<br><span style="font-size:11px;color:#999">면접 참석이 어려움</span></button>
+      <button class="btn" style="flex:1;background:#fff;border:1.5px solid #E8E7E2;color:#666;font-size:13px;padding:11px 8px;line-height:1.4;margin-top:0" onclick="showDeclineForm()">면접 포기<br><span style="font-size:11px;color:#999">면접에 참석하지 않음</span></button>
     </div>
     <button class="btn btn-primary" id="confirmBtn" onclick="confirmSelection()" disabled>선택 완료</button>
     <div style="font-size:12px;color:#999;text-align:center;margin-top:12px">선택 후 변경이 어렵습니다. 신중하게 선택해 주세요.</div>
@@ -277,12 +277,12 @@ function showDeclineForm() {
   _declineReason = null;
   document.getElementById('app').innerHTML = `
     <div class="logo">엘앤티렉서스(주) 채용</div>
-    <h1 style="font-size:20px">면접에 참석하지 않으시겠어요?</h1>
+    <h1 style="font-size:20px">면접을 포기하시겠어요?</h1>
     <div class="sub" style="margin-top:8px;margin-bottom:16px">사유를 선택해 주시면 처리에 참고하겠습니다.</div>
     <div class="slot" id="rsn0" onclick="selectReason(0)"><div class="slot-inner"><div style="flex:1"><div class="slot-date">타사 이직 완료</div></div><span class="slot-check">✓</span></div></div>
     <div class="slot" id="rsn1" onclick="selectReason(1)"><div class="slot-inner"><div style="flex:1"><div class="slot-date">기타</div></div><span class="slot-check">✓</span></div></div>
     <textarea id="declineDetail" rows="3" placeholder="사유를 적어주세요 (선택사항)" style="display:none;width:100%;padding:14px;border:2px solid #E8E7E2;border-radius:12px;font-size:14px;font-family:inherit;resize:vertical;outline:none;margin-top:4px" onfocus="this.style.borderColor='#534AB7'" onblur="this.style.borderColor='#E8E7E2'"></textarea>
-    <button class="btn btn-primary" id="declineBtn" style="margin-top:14px" onclick="submitDecline()" disabled>미참석 제출</button>
+    <button class="btn btn-primary" id="declineBtn" style="margin-top:14px" onclick="submitDecline()" disabled>면접 포기 제출</button>
     <button class="btn" style="background:#F5F4F0;color:#666;margin-top:4px" onclick="backToSlots()">← 일정 선택으로 돌아가기</button>
   `;
 }
@@ -298,7 +298,7 @@ function selectReason(idx) {
 
 async function submitDecline() {
   if (!_declineReason) return;
-  if (!confirm('면접 미참석으로 제출하시겠습니까?\n제출 후에는 변경이 어렵습니다.')) return;
+  if (!confirm('면접 포기로 제출하시겠습니까?\n제출 후에는 변경이 어렵습니다.')) return;
   const detail = document.getElementById('declineDetail')?.value.trim() || '';
   const btns = document.querySelectorAll('#app .btn'); btns.forEach(b => b.disabled = true);
   const { ok, data } = await callEdgeFunction('confirm-interview-slot', { token, responseType: 'declined', reason: _declineReason, reasonDetail: detail });
@@ -312,13 +312,13 @@ async function submitDecline() {
     <div class="success">
       <div class="success-icon">🙏</div>
       <div class="success-title">확인되었습니다</div>
-      <div class="success-sub">면접 미참석 의사가 전달되었습니다.<br>지원해 주셔서 진심으로 감사드리며,<br>더 좋은 기회로 다시 만나뵙기를 바랍니다.</div>
+      <div class="success-sub">면접 포기 의사가 전달되었습니다.<br>지원해 주셔서 진심으로 감사드리며,<br>더 좋은 기회로 다시 만나뵙기를 바랍니다.</div>
     </div>`;
 }
 
 function showAlreadyResponded(type) {
   const msg = type === 'declined'
-    ? '이미 미참석 의사를 제출하셨습니다.<br>변경을 원하시면 담당자에게 연락해 주세요.'
+    ? '이미 면접 포기 의사를 제출하셨습니다.<br>변경을 원하시면 담당자에게 연락해 주세요.'
     : '참석 가능 일정을 이미 보내주셨습니다.<br>담당자가 확인 후 다시 안내드리겠습니다.';
   document.getElementById('app').innerHTML = `
     <div class="logo">엘앤티렉서스(주) 채용</div>

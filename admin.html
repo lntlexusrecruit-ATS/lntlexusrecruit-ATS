@@ -166,7 +166,15 @@ body{font-family:'Pretendard',-apple-system,sans-serif;background:var(--bg);colo
 .iv-eval-panel{display:flex;flex-direction:column;gap:12px;overflow-y:auto}
 /* 채팅 패널 */
 .iv-chat-panel{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.iv-chat-header{padding:14px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700;background:var(--surface2)}
+.iv-job-info{flex:1 1 50%;min-height:0;overflow-y:auto;border-bottom:1px solid var(--border)}
+.iv-job-info-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700;background:var(--surface2);position:sticky;top:0}
+.iv-job-info-body{padding:14px 16px;font-size:13px;line-height:1.7;color:#333}
+.iv-job-info-title{font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:4px}
+.iv-job-info-meta{font-size:12px;color:var(--text3);margin-bottom:10px}
+.iv-job-info-sec-label{font-size:11px;font-weight:700;color:#534AB7;margin:12px 0 4px}
+.iv-job-info-sec-body{font-size:12.5px;color:#333;line-height:1.7;white-space:pre-wrap}
+.iv-chat-section{flex:1 1 50%;min-height:0;display:flex;flex-direction:column}
+.iv-chat-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700;background:var(--surface2)}
 .iv-chat-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
 .iv-chat-msg{max-width:85%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5}
 .iv-chat-msg.mine{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
@@ -874,7 +882,7 @@ function safeUrl(u) {
         <div style="font-size:12px;color:var(--text3)" id="mJobTitle">-</div>
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-        <button class="btn btn-sm pc-only" onclick="downloadResume()">📄 지원서</button>
+        <button class="btn btn-sm pc-only" id="btnDownloadResume" onclick="downloadResume()">📄 지원서</button>
         <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
     </div>
@@ -1296,6 +1304,9 @@ async function showApp() {
   const rb = document.getElementById('roleBadge');
   rb.textContent = isSuperAdmin ? '슈퍼어드민' : isAgency ? '파견업체' : '관리자';
   rb.className = 'role-badge ' + (isSuperAdmin ? 'role-super' : isAgency ? 'role-agency' : 'role-manager');
+  // 자사양식(Word) 이력서 다운로드 버튼은 슈퍼관리자에게만 노출
+  const _dlBtn = document.getElementById('btnDownloadResume');
+  if (_dlBtn && !isSuperAdmin) _dlBtn.style.display = 'none';
   if (isSuperAdmin) {
     document.getElementById('superAdminMenu').classList.remove('hidden');
     document.getElementById('btnAddJob').classList.remove('hidden');
@@ -4124,6 +4135,8 @@ async function notifyInterviewConfirmed(jobId, applicantName, jobTitle, round, d
 // 입사지원서 Word 다운로드 (docxtemplater)
 // ══════════════════════════════════════════════════════
 async function downloadResume(appId) {
+  // 자사양식(Word) 이력서 다운로드는 슈퍼관리자만 (개인정보 유출 최소화)
+  if (adminProfile?.role !== 'superadmin') { showToast('자사 이력서 다운로드는 슈퍼관리자만 가능합니다'); return; }
   const app = allApps.find(a => a.id === (appId || currentAppId));
   if (!app) { showToast('지원자 정보를 찾을 수 없습니다'); return; }
   logAudit('지원서 다운로드', 'application', app.id, app.name);
@@ -4780,7 +4793,7 @@ async function renderInterviewSession(app) {
   const safe = async (q) => { try { return await q; } catch(e) { return { data: null }; } };
   const [
     { data: edus }, { data: careers }, { data: certs },
-    { data: awards }, { data: langs }, { data: myEval }, { data: notes }
+    { data: awards }, { data: langs }, { data: myEval }, { data: notes }, { data: jobInfo }
   ] = await Promise.all([
     safe(sb.from('education').select('*').eq('application_id', appId2).order('start_month', {ascending:false})),
     safe(sb.from('work_experience').select('*').eq('application_id', appId2).order('start_month', {ascending:false})),
@@ -4792,8 +4805,22 @@ async function renderInterviewSession(app) {
       .eq('interview_round', _ivSessionRound)
       .eq('admin_id', currentAdmin.id)
       .maybeSingle()),
-    safe(sb.from('admin_notes').select('*').eq('application_id', appId2).order('created_at', {ascending:false}))
+    safe(sb.from('admin_notes').select('*').eq('application_id', appId2).order('created_at', {ascending:false})),
+    // 채용공고 원문 (면접 패널에 JD 표시용)
+    safe(_ivSessionIsDispatch
+      ? sb.from('dispatch_postings').select('*').eq('id', app.dispatch_posting_id || '').maybeSingle()
+      : sb.from('job_postings').select('*').eq('id', app.job_posting_id || '').maybeSingle())
   ]);
+
+  // ── 채용공고 정보 HTML (채팅 패널 상단) ──────────────────
+  const _ji = jobInfo || {};
+  const _jiMeta = [_ji.department, _ji.location, _ji.employment_type].filter(Boolean).join(' · ');
+  const jobInfoHtml = _ji.title ? `
+    <div class="iv-job-info-title">${esc(_ji.title)}</div>
+    ${_jiMeta ? `<div class="iv-job-info-meta">${esc(_jiMeta)}</div>` : ''}
+    ${_ji.description ? `<div class="iv-job-info-sec-label">📋 직무 내용</div><div class="iv-job-info-sec-body">${esc(_ji.description)}</div>` : ''}
+    ${_ji.requirements ? `<div class="iv-job-info-sec-label">✅ 자격 요건</div><div class="iv-job-info-sec-body">${esc(_ji.requirements)}</div>` : ''}
+  ` : '<div style="font-size:12px;color:var(--text3)">등록된 공고 정보가 없습니다</div>';
 
   // 메모 HTML 미리 생성
   const memoHtml = (notes||[]).length ? `<div style="min-width:180px;max-width:220px;background:#FFFBE6;border:1px solid #FFE58F;border-radius:var(--rxs);padding:10px;flex-shrink:0;overflow-y:auto;max-height:150px">
@@ -5087,15 +5114,21 @@ async function renderInterviewSession(app) {
         </div>
       </div>
 
-      <!-- 채팅 패널 -->
+      <!-- 오른쪽 패널: 위=채용공고 / 아래=면접관 채팅 -->
       <div class="iv-chat-panel">
-        <div class="iv-chat-header">💬 면접관 채팅</div>
-        <div class="iv-chat-messages" id="ivChatMessages">
-          <div style="text-align:center;padding:20px;font-size:12px;color:var(--text3)">채팅을 시작하세요</div>
+        <div class="iv-job-info">
+          <div class="iv-job-info-header">📋 채용공고</div>
+          <div class="iv-job-info-body">${jobInfoHtml}</div>
         </div>
-        <div class="iv-chat-input-wrap">
-          <input class="iv-chat-input" id="ivChatInput" placeholder="메시지 입력..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendChatMsg();event.preventDefault()}">
-          <button class="btn btn-primary btn-sm" onclick="sendChatMsg()">전송</button>
+        <div class="iv-chat-section">
+          <div class="iv-chat-header">💬 면접관 채팅</div>
+          <div class="iv-chat-messages" id="ivChatMessages">
+            <div style="text-align:center;padding:20px;font-size:12px;color:var(--text3)">채팅을 시작하세요</div>
+          </div>
+          <div class="iv-chat-input-wrap">
+            <input class="iv-chat-input" id="ivChatInput" placeholder="메시지 입력..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendChatMsg();event.preventDefault()}">
+            <button class="btn btn-primary btn-sm" onclick="sendChatMsg()">전송</button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -5436,7 +5469,7 @@ ${esc(selectedSlot.available_dates || '-')}</div>
     </div>`
   : (selectedSlot && selectedSlot.response_type === 'declined') ? `
     <div style="padding:14px;background:#FCEBEB;border-radius:var(--rsm);margin-bottom:16px">
-      <div style="font-size:12px;color:#A32D2D;font-weight:700;margin-bottom:6px">❌ 미참석 응답 — 면접에 참석하지 않음</div>
+      <div style="font-size:12px;color:#A32D2D;font-weight:700;margin-bottom:6px">❌ 면접 포기 응답 — 면접에 참석하지 않음</div>
       <div style="font-size:13px;color:#1a1a1a">사유: <b>${esc(selectedSlot.decline_reason) || '-'}</b>${selectedSlot.decline_detail ? ' — ' + esc(selectedSlot.decline_detail) : ''}</div>
       <div style="font-size:11px;color:#A32D2D;margin-top:8px">필요 시 불합격 처리 또는 개별 연락을 진행해 주세요.</div>
     </div>`
@@ -5700,10 +5733,18 @@ function toggleCalDate(dateStr) {
 function clearCalDates() { _schedSelectedDates.clear(); loadSchedulePanel(); }
 function changeCalMonth(dir) { _schedCalMonth += dir; if (_schedCalMonth > 11) { _schedCalMonth=0; _schedCalYear++; } if (_schedCalMonth < 0) { _schedCalMonth=11; _schedCalYear--; } loadSchedulePanel(); }
 
+// 영업직군은 30분 단위, 그 외 직군은 60분 단위로 면접 슬롯 생성
+function _schedSlotStep() {
+  if (_schedIsDispatch) return 60;
+  const app = allApps.find(a => a.id === _schedAppId);
+  return (app?.job_postings?.job_category === '영업') ? 30 : 60;
+}
+
 // 슬롯 일괄 추가 (날짜별 개별 시간)
 async function addSlotsByDate() {
   if (_schedSelectedDates.size === 0) { showToast('날짜를 선택하세요'); return; }
   const col = _schedIsDispatch ? 'dispatch_candidate_id' : 'application_id';
+  const STEP = _schedSlotStep();  // 영업직 30분 / 그 외 60분
   const dates = [..._schedSelectedDates].sort();
   const getMin = t => { const [h,m] = t.split(':').map(Number); return h*60+m; };
   const toStr = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
@@ -5713,13 +5754,13 @@ async function addSlotsByDate() {
     const endStr = document.getElementById(`slotEnd_${i}`)?.value || null;
     const loc = document.getElementById(`slotLoc_${i}`)?.value ?? (_schedDateLoc(date) || _schedDefaultLoc());
     if (endStr) {
-      // 1시간 단위로 쪼개서 각각 row 생성
+      // STEP분 단위로 쪼개서 각각 row 생성
       const startMin = getMin(startStr);
       const endMin = getMin(endStr);
-      for (let t = startMin; t < endMin; t += 60) {
+      for (let t = startMin; t < endMin; t += STEP) {
         rows.push({
           [col]: _schedAppId, interview_round: _schedRound,
-          slot_date: date, slot_time: toStr(t), slot_time_end: toStr(t+60),
+          slot_date: date, slot_time: toStr(t), slot_time_end: toStr(Math.min(t+STEP, endMin)),
           slot_location: loc, created_by: currentAdmin.id
         });
       }
@@ -5768,6 +5809,7 @@ async function addSlots() { await addSlotsByDate(); }
 // 겹치는 날짜 빠른 추가
 async function quickAddSlot(date) {
   const col = _schedIsDispatch ? 'dispatch_candidate_id' : 'application_id';
+  const STEP = _schedSlotStep();  // 영업직 30분 / 그 외 60분
   const dayAvails = _schedAvailability.filter(a => a.slot_date === date);
   const getMin = t => { if (!t) return null; const [h,m] = t.split(':').map(Number); return h*60+m; };
   const toStr = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
@@ -5787,14 +5829,14 @@ async function quickAddSlot(date) {
     }));
     overlap = newO;
   }
-  // 1시간 단위로 쪼개서 각각 insert
+  // STEP분 단위로 쪼개서 각각 insert
   const rows = [];
   if (overlap.length) {
     overlap.forEach(r => {
-      for (let t = r.start; t < r.end; t += 60) {
+      for (let t = r.start; t < r.end; t += STEP) {
         rows.push({
           [col]: _schedAppId, interview_round: _schedRound,
-          slot_date: date, slot_time: toStr(t), slot_time_end: toStr(t+60),
+          slot_date: date, slot_time: toStr(t), slot_time_end: toStr(Math.min(t+STEP, r.end)),
           slot_location: _schedDateLoc(date) || _schedDefaultLoc(), created_by: currentAdmin.id
         });
       }

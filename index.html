@@ -812,6 +812,7 @@ function goToJobList() {
 function applyToJob(id, title, dept, type) {
   jobPostingId = id;
   jobTitle = title;
+  jobEmploymentType = type || '';
   applicationId = null; // 새 공고 → 이 공고의 draft를 새로 찾도록 초기화
   _privacyConsent = null; // 지원서(공고)별로 개인정보 동의를 새로 받음
   window.scrollTo({ top: 0 });
@@ -912,6 +913,7 @@ function goBackToJobs() {
 function selectJob(id, title, dept, type) {
   jobPostingId = id;
   jobTitle = title;
+  jobEmploymentType = type || '';
   _privacyConsent = null; // 지원서(공고)별로 개인정보 동의를 새로 받음
   document.getElementById('jobBadge').textContent = title;
   document.getElementById('viewJobSelect').classList.add('hidden');
@@ -925,6 +927,7 @@ let currentUser = null;
 let applicationId = null;
 let jobPostingId = JOB_POSTING_ID;
 let jobTitle = '';
+let jobEmploymentType = '';  // 지원 공고의 고용형태 (지원자가 선택하지 않고 공고값 사용)
 let skills = [];
 let _privacyConsent = null; // 개인정보 동의 상태 {required, optional, sensitive, at}
 function _optConsented(){ return !!(_privacyConsent && _privacyConsent.optional); }   // 선택정보 동의 여부
@@ -1752,7 +1755,10 @@ function buildBasic(){
     </div>
     <div class="field">
       <label class="field-label">근무 형태</label>
-      <div class="radio-group" id="workTypeGroup">${['정규직','계약직','인턴십','파트타임'].map(v=>`<label class="radio-item ${d.workType===v?'selected':''}"><input type="radio" name="wt" value="${v}" ${d.workType===v?'checked':''} onchange="selRadio(this,'workTypeGroup')">${v}</label>`).join('')}</div>
+      <div style="padding:11px 14px;background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius);font-size:14px;color:#333">
+        💼 ${(jobEmploymentType || (_lpJobs.find(j=>j.id===jobPostingId)?.employment_type) || '공고에 명시된 고용형태를 따릅니다')}
+        <span style="font-size:12px;color:var(--text3);margin-left:6px">· 채용 공고 기준</span>
+      </div>
     </div>
     <div class="field">
       <label class="field-label">지원 경로</label>
@@ -1992,7 +1998,8 @@ function collectStep(){
     const _photoUrl = fd.basic.photoUrl; // 사진 URL 보존
     fd.basic={name:g('f_name'),nameEn:g('f_nameEn'),birth:g('f_birth'),gender:g('f_gender'),nation:g('f_nation'),email:g('f_email'),phone:g('f_phone'),addr:g('f_addr'),salary:g('f_salary'),startDate:g('f_startDate')};
     fd.basic.photoUrl = _photoUrl; // 사진 URL 복원
-    const wt=document.querySelector('input[name="wt"]:checked');if(wt)fd.basic.workType=wt.value;
+    // 근무형태는 지원자가 선택하지 않고 공고의 고용형태를 그대로 사용
+    fd.basic.workType = jobEmploymentType || (_lpJobs.find(j=>j.id===jobPostingId)?.employment_type) || null;
     fd.basic.source=Array.from(document.querySelectorAll('.check-group input:checked')).map(c=>c.value);
     // skillInput에 입력 중인 값도 포함
     const _si = document.getElementById('skillInput');
