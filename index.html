@@ -1429,7 +1429,8 @@ async function _showFormInner() {
       military:app.military_status||null, militaryBranch:app.military_branch||'',
       militaryRank:app.military_rank||'', militaryPeriod:app.military_period||'',
       militaryExemption:app.military_exemption||'',
-      hobby:app.hobby||'', specialty:app.specialty||''
+      hobby:app.hobby||'', specialty:app.specialty||'',
+      referral:app.referral_status||'', referralName:app.referral_name||''
     };
     skills = [...(app.skills||[])];
     // 기존 증명사진 미리보기 복원 (경로 → Signed URL 발급 후 표시)
@@ -1547,6 +1548,8 @@ function buildPayload(isDraft) {
     military_exemption: _optConsented() ? (fd.basic.militaryExemption||null) : null,
     hobby: _optConsented() ? (fd.basic.hobby||null) : null,
     specialty: _optConsented() ? (fd.basic.specialty||null) : null,
+    referral_status: fd.basic.referral||null,
+    referral_name: (fd.basic.referral==='있음') ? (fd.basic.referralName||null) : null,
   };
 }
 
@@ -1675,6 +1678,8 @@ function validateStep(step){
       if(!b[k]||!String(b[k]).trim()){ showToast(`'${label}'을(를) 입력해 주세요`); return false; }
     }
     if(!b.photoUrl){ showToast('증명사진을 업로드해 주세요'); return false; }
+    if(!b.referral){ showToast("'엘앤티렉서스 직원 추천' 여부를 선택해 주세요"); return false; }
+    if(b.referral==='있음' && !String(b.referralName||'').trim()){ showToast('추천해 주신 직원 성함을 입력해 주세요'); return false; }
     return true;
   }
   if(step===1){
@@ -1763,6 +1768,16 @@ function buildBasic(){
     <div class="field">
       <label class="field-label">지원 경로</label>
       <div class="check-group">${['잡코리아','사람인','링크드인','지인 추천','회사 홈페이지','기타'].map(v=>`<label class="check-item ${d.source&&d.source.includes(v)?'selected':''}"><input type="checkbox" value="${v}" ${d.source&&d.source.includes(v)?'checked':''} onchange="selCheck(this)">${v}</label>`).join('')}</div>
+    </div>
+    <div class="field">
+      <label class="field-label">엘앤티렉서스 직원 추천 <span class="required">*</span></label>
+      <div class="radio-group" id="referralGroup">
+        ${['있음','없음'].map(v=>`<label class="radio-item ${d.referral===v?'selected':''}"><input type="radio" name="referral" value="${v}" ${d.referral===v?'checked':''} onchange="selRadio(this,'referralGroup');toggleSubField('referralDetail',this.value==='있음')">${v}</label>`).join('')}
+      </div>
+      <div id="referralDetail" style="display:${d.referral==='있음'?'block':'none'};margin-top:8px">
+        <input type="text" id="f_referralName" value="${d.referralName||''}" placeholder="추천해 주신 직원 성함" style="width:100%;padding:10px 12px;border:0.5px solid var(--border2);border-radius:var(--radius-xs);font-size:13px;font-family:'Pretendard',sans-serif">
+      </div>
+      <div class="field-hint">엘앤티렉서스(주) 임직원의 추천을 받으셨다면 '있음'을 선택하고 성함을 입력해 주세요.</div>
     </div>
     <div class="field">
       <label class="field-label">보유 스킬</label>
@@ -2022,6 +2037,8 @@ function collectStep(){
     fd.basic.militaryExemption = g('f_militaryExemption');
     fd.basic.hobby = g('f_hobby');
     fd.basic.specialty = g('f_specialty');
+    fd.basic.referral = document.querySelector('input[name="referral"]:checked')?.value||'';
+    fd.basic.referralName = g('f_referralName');
   }
   if(currentStep===1){
     document.querySelectorAll('[data-ei]').forEach(el=>{const i=el.dataset.ei,k=el.dataset.k;if(!fd.education[i])fd.education[i]={};fd.education[i][k]=el.value;});
