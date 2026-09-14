@@ -5030,26 +5030,20 @@ async function renderInterviewSession(app) {
           })()}
 
           <!-- 합계 + 대분류별 평균 -->
-          <div style="background:#EEEDFE;border-radius:var(--rxs);padding:10px 14px;margin:12px 0">
+          <div style="background:#EEEDFE;border-radius:var(--rxs);padding:6px 12px;margin:8px 0">
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <span style="font-size:13px;font-weight:700;color:#3C3489">합계</span>
-              <span style="font-size:18px;font-weight:800;color:#3C3489"><span id="evalTotalDisplay">0</span> <span style="font-size:12px;font-weight:500">/ ${EVAL_MAX_TOTAL}점</span></span>
+              <span style="font-size:12px;font-weight:700;color:#3C3489">합계</span>
+              <span style="font-size:15px;font-weight:800;color:#3C3489"><span id="evalTotalDisplay">0</span> <span style="font-size:11px;font-weight:500">/ ${EVAL_MAX_TOTAL}점</span></span>
             </div>
-            <div id="evalSecAvgDisplay" style="font-size:11px;color:#4540A0;margin-top:6px;line-height:1.6"></div>
+            <div id="evalSecAvgDisplay" style="font-size:11px;color:#4540A0;margin-top:3px;line-height:1.5"></div>
           </div>
 
-          <div style="margin-top:12px">
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px">면접관 의견</div>
-            <textarea id="evalComment" rows="4" placeholder="면접 중 특이사항, 인상적인 점 등을 기록하세요"
+          <div style="margin-top:10px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:5px">면접관 의견</div>
+            <textarea id="evalComment" rows="2" placeholder="면접 중 특이사항, 인상적인 점 등을 기록하세요"
               style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:var(--rxs);font-size:13px;resize:vertical">${esc(ev.comment||'')}</textarea>
           </div>
-          <div style="margin-top:8px">
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px">추천 의견</div>
-            <div style="display:flex;gap:6px">
-              ${['합격','보류','불합격'].map(r=>`<button id="rec_${r}" class="btn btn-sm" style="flex:1;${ev.recommendation===r?'background:var(--accent);color:#fff':''}" onclick="setRecommendation('${r}')">${r}</button>`).join('')}
-            </div>
-          </div>
-          <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="saveEvaluation()">💾 평가 저장</button>
+          <button class="btn btn-primary" style="width:100%;margin-top:10px" onclick="saveEvaluation()">💾 평가 저장</button>
         </div>
 
         <!-- 다른 면접관 평가 현황 -->
