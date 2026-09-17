@@ -163,6 +163,11 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
 .lp-hero.has-image .lp-hero-sub { color:var(--text); margin-bottom:0; }
 .lp-hero.has-image .lp-hero-cta { margin-top:24px; background:#fff; color:var(--lp-ink); font-size:19px; padding:20px 52px; box-shadow:0 8px 28px rgba(0,0,0,0.28); }
 .lp-hero.has-image .lp-hero-cta:hover { background:var(--lp-ivory); color:var(--lp-ink); transform:translateY(-2px); box-shadow:0 12px 32px rgba(0,0,0,0.32); }
+/* 히어로 이미지에 문구가 들어간 경우: 이미지 글씨 아래(세로 2/3 지점)에 CTA 배치 */
+.lp-hero.has-image .lp-hero-cta.cta-float { position:absolute; top:66%; left:57%; margin-top:0; }
+@media (max-width:768px) {
+  .lp-hero.has-image .lp-hero-cta.cta-float { position:static; left:auto; top:auto; margin-top:auto; align-self:center; }
+}
 
 .lp-section { max-width:1200px; margin:0 auto; padding:88px 40px 72px; scroll-margin-top:76px; }
 .lp-section-eyebrow { display:flex; align-items:center; justify-content:center; gap:14px; font-size:12px; font-weight:600; color:var(--lp-gold); letter-spacing:0.22em; text-transform:uppercase; margin-bottom:14px; }
@@ -687,10 +692,8 @@ async function loadLanding() {
         // 제목·본문 둘 다 없으면(이미지에 문구가 들어간 경우) 반투명 박스 자체를 숨기고 CTA만 하단에 배치
         const heroInner = document.getElementById('lpHeroInner');
         if (heroInner) heroInner.style.display = (hasTitle || hasContent) ? '' : 'none';
-        if (!hasTitle && !hasContent) {
-          const cta = heroEl.querySelector('.lp-hero-cta');
-          if (cta) cta.style.marginTop = 'auto';
-        }
+        const cta = heroEl.querySelector('.lp-hero-cta');
+        if (cta) { cta.style.marginTop = ''; cta.classList.toggle('cta-float', !hasTitle && !hasContent); }
       } else {
         titleEl.textContent = by.about.title || '엘앤티렉서스(주)';
         heroC.textContent = by.about.content || '';
