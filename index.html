@@ -163,11 +163,6 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
 .lp-hero.has-image .lp-hero-sub { color:var(--text); margin-bottom:0; }
 .lp-hero.has-image .lp-hero-cta { margin-top:24px; background:#fff; color:var(--lp-ink); font-size:19px; padding:20px 52px; box-shadow:0 8px 28px rgba(0,0,0,0.28); }
 .lp-hero.has-image .lp-hero-cta:hover { background:var(--lp-ivory); color:var(--lp-ink); transform:translateY(-2px); box-shadow:0 12px 32px rgba(0,0,0,0.32); }
-/* 히어로 이미지에 문구가 들어간 경우: 이미지 글씨 아래(세로 2/3 지점)에 CTA 배치 */
-.lp-hero.has-image .lp-hero-cta.cta-float { position:absolute; top:66%; left:57%; margin-top:0; }
-@media (max-width:768px) {
-  .lp-hero.has-image .lp-hero-cta.cta-float { position:static; left:auto; top:auto; margin-top:auto; align-self:center; }
-}
 
 .lp-section { max-width:1200px; margin:0 auto; padding:88px 40px 72px; scroll-margin-top:76px; }
 .lp-section-eyebrow { display:flex; align-items:center; justify-content:center; gap:14px; font-size:12px; font-weight:600; color:var(--lp-gold); letter-spacing:0.22em; text-transform:uppercase; margin-bottom:14px; }
@@ -692,8 +687,10 @@ async function loadLanding() {
         // 제목·본문 둘 다 없으면(이미지에 문구가 들어간 경우) 반투명 박스 자체를 숨기고 CTA만 하단에 배치
         const heroInner = document.getElementById('lpHeroInner');
         if (heroInner) heroInner.style.display = (hasTitle || hasContent) ? '' : 'none';
-        const cta = heroEl.querySelector('.lp-hero-cta');
-        if (cta) { cta.style.marginTop = ''; cta.classList.toggle('cta-float', !hasTitle && !hasContent); }
+        if (!hasTitle && !hasContent) {
+          const cta = heroEl.querySelector('.lp-hero-cta');
+          if (cta) cta.style.marginTop = 'auto';
+        }
       } else {
         titleEl.textContent = by.about.title || '엘앤티렉서스(주)';
         heroC.textContent = by.about.content || '';
@@ -1433,7 +1430,7 @@ async function _showFormInner() {
       militaryRank:app.military_rank||'', militaryPeriod:app.military_period||'',
       militaryExemption:app.military_exemption||'',
       hobby:app.hobby||'', specialty:app.specialty||'',
-      referral:app.referral_status||'', referralName:app.referral_name||''
+      referral:app.referral_status||'', referralName:app.referral_name||'', sourceEtc:app.apply_source_etc||''
     };
     skills = [...(app.skills||[])];
     // 기존 증명사진 미리보기 복원 (경로 → Signed URL 발급 후 표시)
@@ -1551,8 +1548,9 @@ function buildPayload(isDraft) {
     military_exemption: _optConsented() ? (fd.basic.militaryExemption||null) : null,
     hobby: _optConsented() ? (fd.basic.hobby||null) : null,
     specialty: _optConsented() ? (fd.basic.specialty||null) : null,
-    referral_status: fd.basic.referral||null,
-    referral_name: (fd.basic.referral==='있음') ? (fd.basic.referralName||null) : null,
+    referral_status: (fd.basic.source||[]).includes('지인 추천') ? (fd.basic.referral||null) : null,
+    referral_name: (fd.basic.source||[]).includes('지인 추천') ? (fd.basic.referralName||null) : null,
+    apply_source_etc: (fd.basic.source||[]).includes('기타') ? (fd.basic.sourceEtc||null) : null,
   };
 }
 
@@ -1681,8 +1679,9 @@ function validateStep(step){
       if(!b[k]||!String(b[k]).trim()){ showToast(`'${label}'을(를) 입력해 주세요`); return false; }
     }
     if(!b.photoUrl){ showToast('증명사진을 업로드해 주세요'); return false; }
-    if(!b.referral){ showToast("'엘앤티렉서스 직원 추천' 여부를 선택해 주세요"); return false; }
-    if(b.referral==='있음' && !String(b.referralName||'').trim()){ showToast('추천해 주신 직원 성함을 입력해 주세요'); return false; }
+    const _src = b.source||[];
+    if(_src.includes('지인 추천') && !b.referral){ showToast("'지인 추천' 구분을 선택해 주세요"); return false; }
+    if(_src.includes('기타') && !String(b.sourceEtc||'').trim()){ showToast("지원 경로 '기타'의 비고를 입력해 주세요"); return false; }
     return true;
   }
   if(step===1){
@@ -1770,17 +1769,21 @@ function buildBasic(){
     </div>
     <div class="field">
       <label class="field-label">지원 경로</label>
-      <div class="check-group">${['잡코리아','사람인','링크드인','지인 추천','회사 홈페이지','기타'].map(v=>`<label class="check-item ${d.source&&d.source.includes(v)?'selected':''}"><input type="checkbox" value="${v}" ${d.source&&d.source.includes(v)?'checked':''} onchange="selCheck(this)">${v}</label>`).join('')}</div>
-    </div>
-    <div class="field">
-      <label class="field-label">엘앤티렉서스 직원 추천 <span class="required">*</span></label>
-      <div class="radio-group" id="referralGroup">
-        ${['있음','없음'].map(v=>`<label class="radio-item ${d.referral===v?'selected':''}"><input type="radio" name="referral" value="${v}" ${d.referral===v?'checked':''} onchange="selRadio(this,'referralGroup');toggleSubField('referralDetail',this.value==='있음')">${v}</label>`).join('')}
+      <div class="check-group">${['잡코리아','사람인','링크드인','지인 추천','회사 홈페이지','기타'].map(v=>`<label class="check-item ${d.source&&d.source.includes(v)?'selected':''}"><input type="checkbox" value="${v}" ${d.source&&d.source.includes(v)?'checked':''} onchange="selCheck(this);updateSourceExtras()">${v}</label>`).join('')}</div>
+
+      <div id="srcReferralBox" style="display:${(d.source||[]).includes('지인 추천')?'block':'none'};margin-top:10px;padding:12px 14px;background:var(--surface2);border:0.5px solid var(--border2);border-radius:var(--radius-xs)">
+        <label class="field-label" style="display:block;margin-bottom:6px">지인 추천 구분 <span class="required">*</span></label>
+        <div class="radio-group" id="referralTypeGroup">
+          ${['엘앤티렉서스(주) 직원 추천','기타 지인 추천'].map(v=>`<label class="radio-item ${d.referral===v?'selected':''}" style="background:#fff"><input type="radio" name="referralType" value="${v}" ${d.referral===v?'checked':''} onchange="selRadio(this,'referralTypeGroup')">${v}</label>`).join('')}
+        </div>
+        <label class="field-label" style="display:block;margin:10px 0 4px">비고 — 추천자 성함</label>
+        <input type="text" id="f_referralName" value="${d.referralName||''}" placeholder="추천해 주신 분의 성함 (선택 입력)" style="width:100%;padding:10px 12px;border:0.5px solid var(--border2);border-radius:var(--radius-xs);font-size:13px;font-family:'Pretendard',sans-serif;background:#fff">
       </div>
-      <div id="referralDetail" style="display:${d.referral==='있음'?'block':'none'};margin-top:8px">
-        <input type="text" id="f_referralName" value="${d.referralName||''}" placeholder="추천해 주신 직원 성함" style="width:100%;padding:10px 12px;border:0.5px solid var(--border2);border-radius:var(--radius-xs);font-size:13px;font-family:'Pretendard',sans-serif">
+
+      <div id="srcEtcBox" style="display:${(d.source||[]).includes('기타')?'block':'none'};margin-top:10px;padding:12px 14px;background:var(--surface2);border:0.5px solid var(--border2);border-radius:var(--radius-xs)">
+        <label class="field-label" style="display:block;margin-bottom:4px">비고 — 기타 지원 경로 <span class="required">*</span></label>
+        <input type="text" id="f_sourceEtc" value="${d.sourceEtc||''}" placeholder="어떤 경로로 채용 공고를 알게 되셨는지 입력해 주세요" style="width:100%;padding:10px 12px;border:0.5px solid var(--border2);border-radius:var(--radius-xs);font-size:13px;font-family:'Pretendard',sans-serif;background:#fff">
       </div>
-      <div class="field-hint">엘앤티렉서스(주) 임직원의 추천을 받으셨다면 '있음'을 선택하고 성함을 입력해 주세요.</div>
     </div>
     <div class="field">
       <label class="field-label">보유 스킬</label>
@@ -2040,8 +2043,9 @@ function collectStep(){
     fd.basic.militaryExemption = g('f_militaryExemption');
     fd.basic.hobby = g('f_hobby');
     fd.basic.specialty = g('f_specialty');
-    fd.basic.referral = document.querySelector('input[name="referral"]:checked')?.value||'';
+    fd.basic.referral = document.querySelector('input[name="referralType"]:checked')?.value||'';
     fd.basic.referralName = g('f_referralName');
+    fd.basic.sourceEtc = g('f_sourceEtc');
   }
   if(currentStep===1){
     document.querySelectorAll('[data-ei]').forEach(el=>{const i=el.dataset.ei,k=el.dataset.k;if(!fd.education[i])fd.education[i]={};fd.education[i][k]=el.value;});
@@ -2068,6 +2072,14 @@ function g(id){const el=document.getElementById(id);return el?el.value:'';}
 function rmEntry(arr,idx,elId){const p=arr.split('.');if(p.length===1)fd[arr].splice(idx,1);else fd[p[0]][p[1]].splice(idx,1);document.getElementById(elId)?.remove();}
 function selRadio(input,groupId){document.querySelectorAll('#'+groupId+' .radio-item').forEach(l=>l.classList.remove('selected'));input.closest('.radio-item').classList.add('selected');}
 function selCheck(input){input.closest('.check-item').classList.toggle('selected',input.checked);}
+// 지원 경로 선택에 따라 하위 비고 입력란 표시/숨김
+function updateSourceExtras(){
+  const picked = Array.from(document.querySelectorAll('.check-group input:checked')).map(c=>c.value);
+  const rb = document.getElementById('srcReferralBox');
+  const eb = document.getElementById('srcEtcBox');
+  if(rb) rb.style.display = picked.includes('지인 추천') ? 'block' : 'none';
+  if(eb) eb.style.display = picked.includes('기타') ? 'block' : 'none';
+}
 async function uploadPortfolioFile(input) {
   const file = input.files[0];
   if (!file) return;

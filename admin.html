@@ -2088,6 +2088,7 @@ async function handleInterviewApproval(appId, app) {
     if (!myEval) {
       showToast('⚠️ 면접 평가표를 먼저 작성해야 합격 처리할 수 있습니다');
       alert('1차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 합격 처리해 주세요.');
+      window._evalGuardBlocked = true;
       return;
     }
     // 내 승인 추가
@@ -2176,6 +2177,7 @@ async function handleInterviewApproval2nd(appId, app) {
     if (!myEval2) {
       showToast('⚠️ 면접 평가표를 먼저 작성해야 합격 처리할 수 있습니다');
       alert('2차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 합격 처리해 주세요.');
+      window._evalGuardBlocked = true;
       return;
     }
     await sb.from('interview_approvals_2nd').insert({ application_id: appId, admin_id: myId });
@@ -2234,6 +2236,7 @@ async function failApplicant() {
       if (!myEval) {
         showToast('⚠️ 면접 평가표를 먼저 작성해야 불합격 처리할 수 있습니다');
         alert(`${round}차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 불합격 처리해 주세요.`);
+        window._evalGuardBlocked = true;
         return;
       }
     } else {
@@ -2241,6 +2244,7 @@ async function failApplicant() {
       if (!anyEval) {
         showToast('⚠️ 면접 평가표가 1건도 없어 불합격 처리할 수 없습니다');
         alert(`${round}차 면접 평가표가 아직 1건도 작성되지 않았습니다.\n\n면접관이 평가표를 작성한 뒤 불합격 처리해 주세요.`);
+        window._evalGuardBlocked = true;
         return;
       }
     }
@@ -2360,7 +2364,7 @@ async function openModal(id) {
       return app.military_status;
     })()]
   ].map(([l,v,f])=>`<div class="info-item ${f?'full-width':''}"><div class="label">${l}</div><div class="val">${esc(v)}</div></div>`).join('');
-  document.getElementById('mApplyInfo').innerHTML=[['희망연봉',app.desired_salary?app.desired_salary.toLocaleString()+'만원':'-'],['입사가능일',app.available_start_date||'-'],['근무형태',app.work_type||'-'],['지원경로',(app.apply_source||[]).join(', ')||'-'],['직원추천',(app.referral_status||'-')+(app.referral_status==='있음'&&app.referral_name?' ('+app.referral_name+')':'')],['지원일',app.submitted_at?new Date(app.submitted_at).toLocaleDateString('ko-KR'):'-'],['접수번호',app.submission_number||'-']].map(([l,v])=>`<div class="info-item"><div class="label">${l}</div><div class="val">${esc(v)}</div></div>`).join('');
+  document.getElementById('mApplyInfo').innerHTML=[['희망연봉',app.desired_salary?app.desired_salary.toLocaleString()+'만원':'-'],['입사가능일',app.available_start_date||'-'],['근무형태',app.work_type||'-'],['지원경로',((app.apply_source||[]).join(', ')||'-')+(app.apply_source_etc?' ('+app.apply_source_etc+')':'')],['지인추천',(app.referral_status||'-')+(app.referral_name?' ('+app.referral_name+')':'')],['지원일',app.submitted_at?new Date(app.submitted_at).toLocaleDateString('ko-KR'):'-'],['접수번호',app.submission_number||'-']].map(([l,v])=>`<div class="info-item"><div class="label">${l}</div><div class="val">${esc(v)}</div></div>`).join('');
   document.getElementById('mSkills').innerHTML=(app.skills||[]).map(s=>`<span class="skill-tag">${esc(s)}</span>`).join('')||'<span style="font-size:13px;color:var(--text3)">없음</span>';
   const links=[['GitHub',app.link_github],['LinkedIn',app.link_linkedin],['블로그',app.link_blog],['포트폴리오 URL',app.link_portfolio]].filter(([,v])=>v);
   const fileLinks = [];
@@ -4918,8 +4922,8 @@ async function renderInterviewSession(app) {
              ['희망연봉', app.desired_salary?app.desired_salary.toLocaleString()+'만원':'-'],
              ['입사가능일', app.available_start_date||'-'],
              ['근무형태', app.work_type||'-'],
-             ['지원경로', (app.apply_source||[]).join(', ')||'-'],
-             ['직원추천', (app.referral_status||'-') + (app.referral_status==='있음'&&app.referral_name?' ('+app.referral_name+')':'')],
+             ['지원경로', ((app.apply_source||[]).join(', ')||'-') + (app.apply_source_etc?' ('+app.apply_source_etc+')':'')],
+             ['지인추천', (app.referral_status||'-') + (app.referral_name?' ('+app.referral_name+')':'')],
              ['보훈', (app.veterans_status||'비해당') + (app.veterans_status==='해당'&&app.veterans_number?' ('+app.veterans_number+')':'')],
              ['장애', (app.disability_status||'비해당') + (app.disability_status==='해당'&&app.disability_type?' ('+app.disability_type+')':'')],
              ['군필', app.military_status||(app.gender==='여성'?'미필(여성포함)':'-')],
@@ -5217,11 +5221,14 @@ async function ivDecision(decision) {
 
   showConfirm(`${name} - ${label} 처리`, `${_ivSessionRound}차 면접 ${label} 처리하시겠습니까?`, async (yes) => {
     if (!yes) return;
+    window._evalGuardBlocked = false; // 평가표 미작성 가드에 걸렸는지 확인용
     if (decision === 'pass') {
       await passApplicant();
     } else {
       await failApplicant();
     }
+    // 평가표 미작성으로 막힌 경우: 면접 진행 화면 그대로 유지 (목록으로 되돌아가지 않음)
+    if (window._evalGuardBlocked) { window._evalGuardBlocked = false; return; }
     // allApps + 승인캐시 갱신 후 대시보드/파이프라인 연동
     await loadApplications();
     await loadDashboard(); // loadApplications 완료 후 호출해야 캐시 반영됨
