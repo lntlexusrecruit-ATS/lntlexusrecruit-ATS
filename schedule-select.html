@@ -219,9 +219,12 @@ function showSuccess(date, time, loc) {
       <div class="success-icon">🎉</div>
       <div class="success-title">면접 일정이 확정되었습니다</div>
       ${bigScheduleCard(date, time, loc)}
+      <div id="expireNotice" style="display:none;margin:0 0 14px;padding:12px 14px;background:#FFF4E5;border:1.5px solid #F5C77E;border-radius:12px;text-align:left">
+        <div style="font-size:14px;font-weight:700;color:#9A5B00">⏱ 이 링크는 <span id="expireCountdown" style="font-size:16px">--분 --초</span> 뒤에 만료됩니다</div>
+        <div style="font-size:13px;color:#7A4A00;margin-top:4px;line-height:1.5">만료 후에는 이 페이지를 다시 열 수 없습니다.<br><strong>지금 일정과 장소를 꼭 확인하고, 화면을 캡처해 두세요.</strong></div>
+      </div>
       <div class="success-sub">
-        위 일정으로 면접이 진행됩니다. 일정과 장소를 꼭 확인해 주세요.<br>
-        추가 안내는 이메일로 발송드립니다.<br><br>
+        위 일정으로 면접이 진행됩니다. 일정과 장소를 꼭 확인해 주세요.<br><br>
         <div style="margin-top:12px;padding:12px;background:#F5F4F0;border-radius:10px">
           <div style="font-size:12px;font-weight:600">엘앤티렉서스(주) 채용담당자</div>
           <div style="font-size:14px;font-weight:700;margin-top:4px">📞 02-2188-3565</div>
@@ -229,6 +232,29 @@ function showSuccess(date, time, loc) {
       </div>
     </div>
   `;
+  startExpireCountdown();
+}
+
+// 확정 화면: 링크 만료까지 남은 시간 카운트다운 (분·초)
+function startExpireCountdown() {
+  const box = document.getElementById('expireNotice');
+  const el = document.getElementById('expireCountdown');
+  if (!box || !el || !window._expiresAt) return;
+  box.style.display = '';
+  const tick = () => {
+    if (!document.getElementById('expireCountdown')) return; // 화면 전환 시 중단
+    const diff = Math.max(0, window._expiresAt - new Date());
+    const totalMin = Math.floor(diff / 60000);
+    const sec = Math.floor((diff % 60000) / 1000);
+    if (diff <= 0) {
+      el.textContent = '만료';
+      box.querySelector('div').innerHTML = '⏱ 이 링크는 <strong>만료</strong>되었습니다';
+      return;
+    }
+    el.textContent = `${totalMin}분 ${String(sec).padStart(2,'0')}초`;
+    setTimeout(tick, 1000);
+  };
+  tick();
 }
 
 // ── 참석 불가 / 미참석 응답 ─────────────────────────────
