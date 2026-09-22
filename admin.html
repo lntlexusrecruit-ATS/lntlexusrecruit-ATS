@@ -68,7 +68,9 @@ body{font-family:'Pretendard',-apple-system,sans-serif;background:var(--bg);colo
 .sb-link.active{background:var(--accent-bg);color:var(--p800);font-weight:500}
 .sb-badge{margin-left:auto;font-size:10px;background:var(--surface2);color:var(--text3);padding:1px 7px;border-radius:20px}
 .sb-link.active .sb-badge{background:var(--accent);color:#fff}
-.sb-footer{padding:14px 20px;border-top:0.5px solid var(--border);display:flex;align-items:center;gap:10px}
+.sb-footer{padding:14px 20px;border-top:0.5px solid var(--border);display:flex;align-items:center;gap:10px;cursor:pointer;transition:background .12s}
+.sb-footer:hover{background:var(--surface2)}
+.sb-footer-hint{font-size:11px;color:var(--text3);margin-left:auto;white-space:nowrap}
 .avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0;background:var(--accent);color:#fff}
 .role-badge{font-size:10px;padding:2px 8px;border-radius:20px;margin-top:2px;display:inline-block}
 .role-super{background:#FAEEDA;color:#633806}.role-agency{background:#FEF3C7;color:#92400E}
@@ -610,14 +612,16 @@ function safeUrl(u) {
           <button class="sb-link" onclick="showPage('auditlog',this)">🗂 접속·열람 기록</button>
         </div>
         <div class="sb-label" style="margin-top:8px">계정</div>
+        <button class="sb-link" onclick="openPwChange(false)">🔑 비밀번호 변경</button>
         <button class="sb-link" onclick="doLogout()">← 로그아웃</button>
       </nav>
-      <div class="sb-footer">
+      <div class="sb-footer" onclick="openPwChange(false)" title="비밀번호 변경">
         <div class="avatar" id="adminAvatar">A</div>
         <div>
           <div style="font-size:13px;font-weight:500" id="adminName">관리자</div>
           <span class="role-badge" id="roleBadge">-</span>
         </div>
+        <span class="sb-footer-hint">🔑</span>
       </div>
     </aside>
 
@@ -1000,7 +1004,7 @@ function safeUrl(u) {
     <div class="form-modal-title">관리자 추가</div>
     <div class="field"><label>이름 <span style="color:var(--accent)">*</span></label><input type="text" id="aName" placeholder="홍길동"></div>
     <div class="field"><label>이메일 <span style="color:var(--accent)">*</span></label><input type="email" id="aEmail" placeholder="manager@company.com"></div>
-    <div class="field"><label>임시 비밀번호 <span style="color:var(--accent)">*</span></label><input type="text" id="aPw" placeholder="8자 이상"></div>
+    <div class="field"><label>임시 비밀번호 <span style="color:var(--accent)">*</span></label><input type="text" id="aPw" placeholder="예: 생년월일 8자리 (19900101)"><div style="font-size:11px;color:var(--text3);margin-top:4px">첫 로그인 시 새 비밀번호 설정이 강제됩니다</div></div>
     <div class="field"><label>부서</label><input type="text" id="aDept" placeholder="마케팅팀"></div>
     <div class="field"><label>역할</label><select id="aRole"><option value="manager">일반 관리자</option><option value="superadmin">슈퍼어드민</option></select></div>
     <div class="field">
@@ -1011,6 +1015,37 @@ function safeUrl(u) {
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
       <button class="btn" onclick="closeAdminForm()">취소</button>
       <button class="btn btn-primary" onclick="saveAdmin()">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 비밀번호 변경 (본인) -->
+<div id="pwChangeModal" class="form-modal hidden" style="z-index:300">
+  <div class="form-modal-inner" style="width:420px">
+    <div class="form-modal-title" id="pwChangeTitle">비밀번호 변경</div>
+    <div id="pwChangeForcedMsg" class="hidden" style="font-size:13px;color:var(--text2);background:var(--surface2);border-radius:var(--rxs);padding:10px 12px;margin-bottom:14px;line-height:1.5">임시 비밀번호로 로그인하셨습니다.<br>계속 이용하려면 <b>새 비밀번호를 설정</b>해 주세요.</div>
+    <div class="field" id="pwCurWrap"><label>현재 비밀번호 <span style="color:var(--accent)">*</span></label><input type="password" id="pwCur" placeholder="현재 비밀번호" autocomplete="current-password"></div>
+    <div class="field"><label>새 비밀번호 <span style="color:var(--accent)">*</span></label><input type="password" id="pwNew" placeholder="8자 이상" autocomplete="new-password"></div>
+    <div class="field"><label>새 비밀번호 확인 <span style="color:var(--accent)">*</span></label><input type="password" id="pwNew2" placeholder="한 번 더 입력" autocomplete="new-password" onkeydown="if(event.key==='Enter')submitPwChange()"></div>
+    <div class="err hidden" id="pwChangeErr"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn" id="pwChangeCancel" onclick="closePwChange()">취소</button>
+      <button class="btn" id="pwChangeLogout" onclick="doLogout()" style="display:none">로그아웃</button>
+      <button class="btn btn-primary" id="pwChangeSubmit" onclick="submitPwChange()">변경</button>
+    </div>
+  </div>
+</div>
+
+<!-- 비밀번호 초기화 (슈퍼어드민 → 다른 관리자) -->
+<div id="pwResetModal" class="form-modal hidden">
+  <div class="form-modal-inner" style="width:420px">
+    <div class="form-modal-title">비밀번호 초기화</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5"><b id="pwResetTarget">-</b> 님의 비밀번호를 임시 비밀번호로 바꿉니다.<br>해당 관리자는 다음 로그인 때 <b>새 비밀번호를 반드시 설정</b>해야 합니다.</div>
+    <div class="field"><label>임시 비밀번호 <span style="color:var(--accent)">*</span></label><input type="text" id="pwResetNew" placeholder="예: 생년월일 8자리 (19900101)" onkeydown="if(event.key==='Enter')submitPwReset()"></div>
+    <div class="err hidden" id="pwResetErr"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn" onclick="closePwReset()">취소</button>
+      <button class="btn btn-primary" onclick="submitPwReset()">초기화</button>
     </div>
   </div>
 </div>
@@ -1185,6 +1220,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     logAudit('접속(세션 유지)');
+    if (adminProfile.must_change_password) { openPwChange(true); return; }
     showApp();
   }
 });
@@ -1212,7 +1248,103 @@ async function doLogin() {
     return;
   }
   logAudit('로그인');
+  if (adminProfile.must_change_password) { openPwChange(true); return; }
   showApp();
+}
+
+// ── 비밀번호 변경 (본인) ─────────────────────────────────
+// forced=true: 임시 비밀번호 로그인 직후 → 닫기 불가, 변경 완료 후에만 앱 진입
+let _pwForced = false;
+function openPwChange(forced) {
+  _pwForced = !!forced;
+  ['pwCur','pwNew','pwNew2'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('pwChangeErr').classList.add('hidden');
+  document.getElementById('pwChangeTitle').textContent = _pwForced ? '새 비밀번호 설정' : '비밀번호 변경';
+  document.getElementById('pwChangeForcedMsg').classList.toggle('hidden', !_pwForced);
+  document.getElementById('pwCurWrap').style.display = _pwForced ? 'none' : '';
+  document.getElementById('pwChangeCancel').style.display = _pwForced ? 'none' : '';
+  document.getElementById('pwChangeLogout').style.display = _pwForced ? '' : 'none';
+  document.getElementById('pwChangeSubmit').textContent = _pwForced ? '설정하고 시작' : '변경';
+  document.getElementById('pwChangeModal').classList.remove('hidden');
+  setTimeout(() => document.getElementById(_pwForced ? 'pwNew' : 'pwCur')?.focus(), 50);
+}
+function closePwChange() {
+  if (_pwForced) return;
+  document.getElementById('pwChangeModal').classList.add('hidden');
+}
+async function submitPwChange() {
+  const err = document.getElementById('pwChangeErr');
+  err.classList.add('hidden');
+  const cur = document.getElementById('pwCur').value;
+  const pw1 = document.getElementById('pwNew').value;
+  const pw2 = document.getElementById('pwNew2').value;
+  if (!_pwForced && !cur) { showErr(err, '현재 비밀번호를 입력하세요'); return; }
+  if (!pw1 || !pw2) { showErr(err, '새 비밀번호를 입력하세요'); return; }
+  if (pw1.length < 8) { showErr(err, '비밀번호는 8자 이상이어야 합니다'); return; }
+  if (pw1 !== pw2) { showErr(err, '새 비밀번호가 서로 다릅니다'); return; }
+  if (!_pwForced && cur === pw1) { showErr(err, '현재 비밀번호와 다른 비밀번호를 입력하세요'); return; }
+  const btn = document.getElementById('pwChangeSubmit');
+  btn.disabled = true;
+  try {
+    // 자발적 변경 시 현재 비밀번호 재확인 (세션 탈취 상태에서 비밀번호 변경 방지)
+    if (!_pwForced) {
+      const { error: reErr } = await sb.auth.signInWithPassword({ email: currentAdmin.email, password: cur });
+      if (reErr) { showErr(err, '현재 비밀번호가 올바르지 않습니다'); return; }
+    }
+    const { error } = await sb.auth.updateUser({ password: pw1 });
+    if (error) {
+      const m = /same/i.test(error.message) ? '이전과 다른 비밀번호를 입력하세요' : error.message;
+      showErr(err, '변경 실패: ' + m); return;
+    }
+    await sb.from('admin_profiles').update({ must_change_password: false, updated_at: new Date().toISOString() }).eq('id', currentAdmin.id);
+    if (adminProfile) adminProfile.must_change_password = false;
+    logAudit('비밀번호 변경');
+    const wasForced = _pwForced;
+    _pwForced = false;
+    document.getElementById('pwChangeModal').classList.add('hidden');
+    showToast('✓ 비밀번호가 변경되었습니다');
+    if (wasForced) showApp();
+  } finally { btn.disabled = false; }
+}
+
+// ── 비밀번호 초기화 (슈퍼어드민 → 다른 관리자, Edge Function 경유) ──
+let _pwResetId = null;
+function openPwReset(adminId) {
+  const a = allAdmins.find(x => x.id === adminId);
+  if (!a) return;
+  _pwResetId = adminId;
+  document.getElementById('pwResetTarget').textContent = `${a.name} (${a.email})`;
+  document.getElementById('pwResetNew').value = '';
+  document.getElementById('pwResetErr').classList.add('hidden');
+  document.getElementById('pwResetModal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('pwResetNew')?.focus(), 50);
+}
+function closePwReset() { document.getElementById('pwResetModal').classList.add('hidden'); _pwResetId = null; }
+async function submitPwReset() {
+  const err = document.getElementById('pwResetErr');
+  err.classList.add('hidden');
+  const pw = document.getElementById('pwResetNew').value.trim();
+  if (!_pwResetId) return;
+  if (pw.length < 8) { showErr(err, '임시 비밀번호는 8자 이상이어야 합니다'); return; }
+  const target = allAdmins.find(x => x.id === _pwResetId);
+  showLoading('비밀번호 초기화 중...');
+  try {
+    const { data: _s } = await sb.auth.getSession();
+    const callerToken = _s?.session?.access_token || '';
+    const res = await fetch(SUPABASE_URL + '/functions/v1/admin-reset-password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + SUPABASE_KEY, 'apikey': SUPABASE_KEY, 'x-caller-token': callerToken },
+      body: JSON.stringify({ targetId: _pwResetId, newPassword: pw })
+    });
+    let result = {};
+    try { result = await res.json(); } catch(e) {}
+    hideLoading();
+    if (!res.ok || result.error) { showErr(err, result.error || ('초기화 실패 (' + res.status + ')')); return; }
+    logAudit('비밀번호 초기화', 'admin', _pwResetId, target?.name);
+    closePwReset();
+    await loadAdmins();
+    showToast(`✓ ${target?.name || ''} 비밀번호 초기화 완료 — 임시 비밀번호를 본인에게 전달하세요`);
+  } catch(e) { hideLoading(); showErr(err, '네트워크 오류: ' + e.message); }
 }
 
 async function doLogout() { try { localStorage.removeItem(ADMIN_LASTACT_KEY); } catch(e) {} await sb.auth.signOut(); location.reload(); }
@@ -2620,12 +2752,13 @@ async function loadAdmins() {
     return `<div class="admin-card">
       <div class="avatar" style="width:36px;height:36px;font-size:13px;flex-shrink:0">${esc(a.name[0])}</div>
       <div class="admin-info">
-        <div class="admin-name">${esc(a.name)} <span class="role-badge ${a.role==='superadmin'?'role-super':'role-manager'}">${a.role==='superadmin'?'슈퍼어드민':'관리자'}</span> ${!a.is_active?'<span style="font-size:11px;color:var(--r600)">(비활성)</span>':''}</div>
+        <div class="admin-name">${esc(a.name)} <span class="role-badge ${a.role==='superadmin'?'role-super':'role-manager'}">${a.role==='superadmin'?'슈퍼어드민':'관리자'}</span> ${!a.is_active?'<span style="font-size:11px;color:var(--r600)">(비활성)</span>':''} ${a.must_change_password?'<span style="font-size:11px;color:var(--text3)" title="다음 로그인 시 새 비밀번호 설정 필요">🔑 임시비번</span>':''}</div>
         <div class="admin-email">${esc(a.email)} ${a.department?'· '+esc(a.department):''}</div>
         ${a.role!=='superadmin'?`<div class="admin-perms">${permJobs.length?permJobs.map(j=>`<span class="perm-tag">${esc(j.title)}</span>`).join(''):'<span style="font-size:11px;color:var(--text3)">권한 없음</span>'}</div>`:'<div style="font-size:11px;color:var(--a600);margin-top:4px">모든 공고 접근 가능</div>'}
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="btn btn-sm btn-primary" onclick="openAdminEdit('${a.id}')">수정</button>
+        ${a.id!==currentAdmin.id?`<button class="btn btn-sm" onclick="openPwReset('${a.id}')" title="임시 비밀번호로 초기화">🔑 초기화</button>`:''}
         ${a.id!==currentAdmin.id?`<button class="btn btn-sm btn-danger" onclick="toggleAdminActive('${a.id}',${a.is_active})">${a.is_active?'비활성화':'활성화'}</button>`:''}
       </div>
     </div>`;
