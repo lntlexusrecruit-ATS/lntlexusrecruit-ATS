@@ -5521,6 +5521,7 @@ async function loadSchedulePanel() {
 
   // ── A. 지원자 응답 표시 (시간확정 / 참석불가 / 미참석) ─
   const _selDone = !!(selectedSlot && selectedSlot.slot_id); // 실제로 시간을 골라 확정한 경우만
+  const _pendingSel = !!(selectedSlot && !selectedSlot.slot_id && !selectedSlot.response_type && selectedSlot.token); // 링크 발송됨, 아직 응답 전
   const finalSection = _selDone ? `
     <div style="padding:14px;background:#EEEDFE;border-radius:var(--rsm);margin-bottom:16px;text-align:center">
       <div style="font-size:12px;color:#534AB7;font-weight:700;margin-bottom:4px">🎉 지원자 확정 완료</div>
@@ -5651,7 +5652,6 @@ ${esc(selectedSlot.available_dates || '-')}</div>
 
   // ── 발송된 선택 링크 다시 보기 (아직 응답 전인 경우) ──
   let linkSection = '';
-  const _pendingSel = selectedSlot && !selectedSlot.slot_id && !selectedSlot.response_type && selectedSlot.token;
   if (_pendingSel && isSuperAdmin) {
     const _baseUrl = window.location.href.replace(/[^/]*$/, '');
     const _selUrl = `${_baseUrl}schedule-select.html?token=${selectedSlot.token}`;
