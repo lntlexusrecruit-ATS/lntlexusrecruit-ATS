@@ -4301,11 +4301,22 @@ async function sendJandi(emails, body, info) {
   } catch(e) { console.log('잔디 발송 실패:', e); }
 }
 
+// 서류검토 담당자(admin_job_permissions) + 이름/이메일 조회
+// ※ admin_job_permissions → admin_profiles FK가 2개(admin_id, granted_by)라 자동 조인이 실패함 → 두 번 나눠 조회
+async function fetchPermProfiles(jobId) {
+  const { data: perms, error } = await sb.from('admin_job_permissions').select('admin_id').eq('job_posting_id', jobId);
+  if (error) { console.error('perm load error', error); return { data: [] }; }
+  const ids = [...new Set((perms || []).map(p => p.admin_id))];
+  if (!ids.length) return { data: [] };
+  const { data: profs } = await sb.from('admin_profiles').select('id, name, email, is_active').in('id', ids);
+  return { data: (profs || []).filter(a => a.is_active !== false).map(a => ({ admin_id: a.id, admin_profiles: { name: a.name, email: a.email } })) };
+}
+
 // 검토 요청 알림 (관리자검토 단계 이동 시)
 async function notifyReviewRequired(jobId, applicantName, jobTitle) {
   try {
     // 수신자: 서류검토 담당자(admin_job_permissions)만 (면접관 제외)
-    const { data: perms } = await sb.from('admin_job_permissions').select('admin_id, admin_profiles(name, email)').eq('job_posting_id', jobId);
+    const { data: perms } = await fetchPermProfiles(jobId);
     const recipients = new Map();
     (perms||[]).forEach(p => {
       if (p.admin_profiles?.email) recipients.set(p.admin_profiles.email, p.admin_profiles.name);
@@ -4325,7 +4336,7 @@ async function notifyReviewRequired(jobId, applicantName, jobTitle) {
 async function notifyInterviewConfirmed(jobId, applicantName, jobTitle, round, dateStr, timeStr) {
   try {
     const [{ data: perms }, { data: ivs }] = await Promise.all([
-      sb.from('admin_job_permissions').select('admin_id, admin_profiles(name, email)').eq('job_posting_id', jobId),
+      fetchPermProfiles(jobId),
       sb.from(round === 2 ? 'job_interviewers_2nd' : 'job_interviewers').select('admin_id, admin_profiles(name, email)').eq('job_id', jobId)
     ]);
     const recipients = new Map();
@@ -4920,7 +4931,7 @@ async function icsAddToCalendar(appId) {
     if (jobId) {
       const ivTable = round === 2 ? 'job_interviewers_2nd' : 'job_interviewers';
       const [{ data: perms }, { data: ivs }] = await Promise.all([
-        sb.from('admin_job_permissions').select('admin_profiles(name, email)').eq('job_posting_id', jobId),
+        fetchPermProfiles(jobId),
         sb.from(ivTable).select('admin_profiles(name, email)').eq('job_id', jobId)
       ]);
       const map = new Map();
