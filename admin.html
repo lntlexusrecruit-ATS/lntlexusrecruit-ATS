@@ -2465,8 +2465,8 @@ async function openModal(id) {
   const avatarEl = document.getElementById('mAvatar');
   const _mPhotoUrl = app.photo_url ? await afUrl(app.photo_url) : null;
   if (_mPhotoUrl) {
-    avatarEl.innerHTML = `<img src="${_mPhotoUrl}" style="width:104px;height:104px;border-radius:50%;object-fit:cover">`;
-    avatarEl.style.cssText = 'flex-shrink:0';
+    avatarEl.innerHTML = `<img src="${_mPhotoUrl}" style="width:104px;height:104px;border-radius:50%;object-fit:cover;display:block">`;
+    avatarEl.style.cssText = 'width:104px;height:104px;border-radius:50%;overflow:hidden;flex-shrink:0';
   } else {
     avatarEl.textContent = (app.name||'?').slice(0,2);
     avatarEl.style.cssText = `background:${ac.bg};color:${ac.color};width:104px;height:104px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:500;flex-shrink:0`;
