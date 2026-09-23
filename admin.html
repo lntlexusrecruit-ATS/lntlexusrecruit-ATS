@@ -1533,7 +1533,7 @@ function computeTodos(jobIds) {
     return r > 0 && !confirmedKey.has(a.id + '_' + r);
   });
 
-  const todayStr = new Date().toISOString().slice(0,10);
+  const _td = new Date(); const todayStr = `${_td.getFullYear()}-${String(_td.getMonth()+1).padStart(2,'0')}-${String(_td.getDate()).padStart(2,'0')}`;
   const slotById = Object.fromEntries(allInterviewSlots.map(s => [s.id, s]));
   // 면접 예정: 현재 단계 라운드의 확정 일정이 오늘 이후인 경우만 (지난 라운드 일정은 제외)
   const upcomingInterviews = allInterviewSelections.filter(sel => {
@@ -1565,7 +1565,7 @@ function computeDispatchTodos(postingIds) {
   const selectedCandIds = new Set(allInterviewSelections.filter(s=>s.dispatch_candidate_id).map(s => s.dispatch_candidate_id));
   const waitingSchedule = cands.filter(c => c.stage === '관리자검토' && !selectedCandIds.has(c.id));
 
-  const todayStr = new Date().toISOString().slice(0,10);
+  const _td = new Date(); const todayStr = `${_td.getFullYear()}-${String(_td.getMonth()+1).padStart(2,'0')}-${String(_td.getDate()).padStart(2,'0')}`;
   const slotById = Object.fromEntries(allInterviewSlots.map(s => [s.id, s]));
   const upcomingInterviews = allInterviewSelections.filter(sel => {
     if (!sel.dispatch_candidate_id) return false;
@@ -1647,7 +1647,7 @@ function jobByJobListHtml(jobs, postings) {
 function myAssignedJobIds() {
   const ids1 = allJobInterviewers1.filter(ji => ji.admin_id === currentAdmin.id).map(ji => ji.job_id);
   const ids2 = allJobInterviewers2.filter(ji => ji.admin_id === currentAdmin.id).map(ji => ji.job_id);
-  return [...new Set([...ids1, ...ids2])];
+  return [...new Set([...ids1, ...ids2, ...(window._myPermJobIds || [])])];
 }
 
 function myAssignedDispatchPostingIds() {
@@ -1896,6 +1896,13 @@ async function saveJob() {
     if (error) { showToast('오류: ' + error.message); return; }
     jobId = data.id;
   }
+  const _wasEdit = !!editJobId;
+  // 저장 전 기존 면접관 (영업 외 직군: 면접관에서 빠진 사람의 서류검토 권한 회수용)
+  const [{ data: _old1 }, { data: _old2 }] = await Promise.all([
+    sb.from('job_interviewers').select('admin_id').eq('job_id', jobId),
+    sb.from('job_interviewers_2nd').select('admin_id').eq('job_id', jobId)
+  ]);
+  const _oldIvIds = [...new Set([...(_old1||[]), ...(_old2||[])].map(r => r.admin_id))];
   // 1차 면접관 저장
   const checkedInterviewers = Array.from(document.querySelectorAll('#jInterviewers input[name="jInterviewer"]:checked')).map(c => c.value);
   await sb.from('job_interviewers').delete().eq('job_id', jobId);
@@ -1921,13 +1928,17 @@ async function saveJob() {
       const toDel = curIds.filter(id => !wantIds.includes(id));
       if (toDel.length) await sb.from('admin_job_permissions').delete().eq('job_posting_id', jobId).in('admin_id', toDel);
     } else {
-      wantIds = [...new Set([...curIds, ...checkedInterviewers, ...checkedInterviewers2nd])];
+      const _newIv = new Set([...checkedInterviewers, ...checkedInterviewers2nd]);
+      const _removedIv = _oldIvIds.filter(id => !_newIv.has(id));
+      const toDel = curIds.filter(id => _removedIv.includes(id));
+      if (toDel.length) await sb.from('admin_job_permissions').delete().eq('job_posting_id', jobId).in('admin_id', toDel);
+      wantIds = [...new Set([...curIds.filter(id => !toDel.includes(id)), ..._newIv])];
     }
     // 슈퍼어드민도 서류검토 담당자로 지정 가능 (표시·알림 대상에 포함)
     const toAdd = wantIds.filter(id => !curIds.includes(id));
     if (toAdd.length) await sb.from('admin_job_permissions').insert(toAdd.map(aid => ({ admin_id: aid, job_posting_id: jobId, granted_by: currentAdmin.id })));
   } catch(e) { console.error('perm sync error', e); }
-  closeJobForm(); await loadJobs(); showToast(editJobId ? '✓ 공고 수정 완료' : '✓ 공고 등록 완료');
+  closeJobForm(); await loadJobs(); showToast(_wasEdit ? '✓ 공고 수정 완료' : '✓ 공고 등록 완료');
 }
 
 async function toggleJobActive(id, current) {
@@ -2199,7 +2210,7 @@ async function passApplicant() {
   if (stage === '지원완료' || stage === '서류검토' || stage === '서류합격') {
     // 슈퍼어드민만 관리자검토로 이동 가능
     if (role !== 'superadmin') { showToast('슈퍼어드민만 서류 합격 처리할 수 있습니다'); return; }
-    await updateStageById(currentAppId, '관리자검토');
+    if (!(await updateStageById(currentAppId, '관리자검토'))) return;
     showToast('✓ 관리자 검토 단계로 이동했습니다');
     updateModalStage('관리자검토');
     // 배정된 관리자/면접관들에게 EmailJS 알림 발송
@@ -2212,14 +2223,14 @@ async function passApplicant() {
     // 이 공고에 배정된 manager만 1차면접으로 이동 가능
     if (role === 'superadmin') {
       // 슈퍼어드민은 항상 가능
-      await updateStageById(currentAppId, '1차면접');
+      if (!(await updateStageById(currentAppId, '1차면접'))) return;
       showToast('✓ 1차면접으로 이동했습니다');
       updateModalStage('1차면접');
     } else if (role === 'manager') {
       // 서류검토 담당자(공고 접근 권한 보유자)만 가능 — 면접관만인 사람은 불가
       const { data: perm } = await sb.from('admin_job_permissions').select('id').eq('admin_id', currentAdmin.id).eq('job_posting_id', app.job_posting_id).maybeSingle();
       if (!perm) { showToast('서류검토 담당자만 검토 단계 합격 처리를 할 수 있습니다'); return; }
-      await updateStageById(currentAppId, '1차면접');
+      if (!(await updateStageById(currentAppId, '1차면접'))) return;
       showToast('✓ 1차면접으로 이동했습니다');
       updateModalStage('1차면접');
     } else {
@@ -2531,7 +2542,7 @@ async function openModal(id) {
   const avatarEl = document.getElementById('mAvatar');
   const _mPhotoUrl = app.photo_url ? await afUrl(app.photo_url) : null;
   if (_mPhotoUrl) {
-    avatarEl.innerHTML = `<img src="${_mPhotoUrl}" style="width:104px;height:104px;border-radius:50%;object-fit:cover;display:block">`;
+    avatarEl.innerHTML = `<img src="${esc(_mPhotoUrl)}" style="width:104px;height:104px;border-radius:50%;object-fit:cover;display:block">`;
     avatarEl.style.cssText = 'width:104px;height:104px;border-radius:50%;overflow:hidden;flex-shrink:0';
   } else {
     avatarEl.textContent = (app.name||'?').slice(0,2);
@@ -2663,6 +2674,8 @@ function closeModal() {
 }
 function closeSchedulePanel() {
   document.getElementById('schedulePanel').style.display = 'none';
+  if (_schedLinkTimer) { clearInterval(_schedLinkTimer); _schedLinkTimer = null; }
+  window._schedLinkExpiresAt = null;
 }
 
 async function downloadResume() {
@@ -4710,8 +4723,8 @@ async function loadInterviewRoom() {
     .order('submitted_at');
 
   if (role !== 'superadmin') {
-    const { data: perms } = await sb.from('admin_job_permissions').select('job_posting_id').eq('admin_id', currentAdmin.id);
-    const ids = (perms||[]).map(p => p.job_posting_id);
+    // 서류검토 담당 + 1차/2차 면접관 배정 공고 (loadJobs에서 이미 합산됨)
+    const ids = (allJobs || []).map(j => j.id);
     if (!ids.length) { c.innerHTML = '<div class="empty-state"><div class="icon">🎤</div><p>배정된 면접이 없습니다</p></div>'; return; }
     appsQuery = appsQuery.in('job_posting_id', ids);
   }
@@ -4732,7 +4745,8 @@ async function loadInterviewRoom() {
   // 날짜별 그룹핑
   const byDate = {};
   apps.forEach(app => {
-    const sel = (selections||[]).find(s => s.application_id === app.id);
+    const _r = app.stage === '2차면접' ? 2 : 1;
+    const sel = (selections||[]).find(s => s.application_id === app.id && (s.interview_round || 1) === _r);
     const slot = sel?.interview_slots || null;
     const date = slot?.slot_date || 'unscheduled';
     if (!byDate[date]) byDate[date] = [];
@@ -5107,7 +5121,7 @@ async function renderInterviewSession(app) {
 
   const _ivPhotoUrl = app.photo_url ? await afUrl(app.photo_url) : null;
   const photoHtml = _ivPhotoUrl
-    ? `<img src="${_ivPhotoUrl}" style="width:80px;height:100px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0">`
+    ? `<img src="${esc(_ivPhotoUrl)}" style="width:80px;height:100px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0">`
     : `<div style="width:80px;height:100px;background:var(--surface2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--text3);flex-shrink:0">👤</div>`;
 
   c.innerHTML = `
@@ -5548,6 +5562,10 @@ async function loadSchedulePanel() {
     }
   }
 
+  // 가능시간은 이 라운드 면접관이 입력한 것만 사용 (서류검토 담당자·다른 라운드 면접관 입력 제외)
+  const _ivIdSet = new Set(allInterviewers.map(i => i.admin_id));
+  if (_ivIdSet.size) _schedAvailability = _schedAvailability.filter(a => _ivIdSet.has(a.admin_id));
+
   // ── 면접관 일정 충돌 검사 ──────────────────────────────
   // 이 지원자의 면접관들이 이미 다른 지원자와 확정된 시간대를 수집한다.
   // 같은 사람이 A공고 1차 면접관 / B공고 2차 면접관일 수 있으므로 양쪽 다 확인.
@@ -5603,17 +5621,20 @@ async function loadSchedulePanel() {
   const { data: myJobPerm } = app ? await sb.from('admin_job_permissions')
     .select('id').eq('admin_id', myId).eq('job_posting_id', app.job_posting_id).maybeSingle()
     : { data: null };
-  const canInputAvail = isInterviewer || !!myJobPerm || isSuperAdmin;
+  const canInputAvail = isInterviewer || isSuperAdmin;
 
   // ── A. 지원자 응답 표시 (시간확정 / 참석불가 / 미참석) ─
   const _selDone = !!(selectedSlot && selectedSlot.slot_id); // 실제로 시간을 골라 확정한 경우만
   const _pendingSel = !!(selectedSlot && !selectedSlot.slot_id && !selectedSlot.response_type && selectedSlot.token); // 링크 발송됨, 아직 응답 전
+  // 지원자 현재 단계의 라운드와 보고 있는 탭이 다르면 발송 불가 (지난 라운드 탭에서 발송 시 현재 라운드 확정 일정이 지워짐)
+  const _curRound = _schedIsDispatch ? 1 : ((allApps.find(a => a.id === _schedAppId)?.stage === '2차면접') ? 2 : 1);
+  const _roundMismatch = _schedRound !== _curRound;
   const finalSection = _selDone ? `
     <div style="padding:14px;background:#EEEDFE;border-radius:var(--rsm);margin-bottom:16px;text-align:center">
       <div style="font-size:12px;color:#534AB7;font-weight:700;margin-bottom:4px">🎉 지원자 확정 완료</div>
       <div style="font-size:15px;font-weight:700;color:#1a1a1a">${formatSlotDate(selectedSlot.interview_slots?.slot_date)}</div>
       <div style="font-size:14px;color:#534AB7;font-weight:600">${formatSlotTime(selectedSlot.interview_slots?.slot_time)}</div>
-      ${selectedSlot.interview_slots?.slot_location?`<div style="font-size:12px;color:#444;margin-top:4px">📍 ${selectedSlot.interview_slots.slot_location}</div>`:''}
+      ${selectedSlot.interview_slots?.slot_location?`<div style="font-size:12px;color:#444;margin-top:4px">📍 ${esc(selectedSlot.interview_slots.slot_location)}</div>`:''}
     </div>`
   : (selectedSlot && selectedSlot.response_type === 'unavailable') ? `
     <div style="padding:14px;background:#FEF3E2;border-radius:var(--rsm);margin-bottom:16px">
@@ -5645,7 +5666,7 @@ ${esc(selectedSlot.available_dates || '-')}</div>
             ${isSuperAdmin&&!_selDone?`<div style="display:flex;gap:4px;flex-shrink:0"><button class="btn btn-sm" onclick="editSlotLocation('${s.id}')">📍 장소</button><button class="btn btn-sm btn-danger" onclick="removeSlot('${s.id}')">삭제</button></div>`:''}
           </div>
         </div>`).join('')}
-      ${isSuperAdmin&&!_selDone&&!_pendingSel?`
+      ${isSuperAdmin&&!_selDone&&!_pendingSel&&!_roundMismatch?`
         <button class="btn btn-primary btn-sm" style="width:100%;margin-top:6px;padding:10px" onclick="sendScheduleEmail()">
           📧 지원자에게 발송 (선택 링크 전송)
         </button>`:''}
@@ -5746,7 +5767,7 @@ ${esc(selectedSlot.available_dates || '-')}</div>
     // 발송 시각 = 만료 시각 − 2시간 (sendScheduleEmail에서 expires_at = 발송 + 2h 로 저장)
     const _sentAt = _exp ? new Date(_exp.getTime() - 2 * 60 * 60 * 1000) : null;
     const _fmt = d => d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    window._schedLinkExpiresAt = _exp; // 남은 시간 카운트다운용
+    window._schedLinkExpiresAt = _expired ? null : _exp; // 남은 시간 카운트다운용 (이미 만료면 카운트다운 안 함 → 무한 새로고침 방지)
     linkSection = `
     <div style="padding:12px 14px;background:${_expired ? '#FCEBEB' : 'var(--surface2)'};border:1px dashed ${_expired ? '#E0A0A0' : 'var(--border2)'};border-radius:var(--rsm);margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
@@ -6154,7 +6175,11 @@ async function sendScheduleEmail() {
   const col = _schedIsDispatch ? 'dispatch_candidate_id' : 'application_id';
   const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // 2시간 후
   // 기존 선택 레코드 있으면 업데이트, 없으면 삽입
-  const { data: existing } = await sb.from('interview_selections').select('id').eq(col, _schedAppId).maybeSingle();
+  const { data: existing } = await sb.from('interview_selections').select('id, slot_id, interview_round').eq(col, _schedAppId).maybeSingle();
+  // 다른 라운드의 확정 일정이 있으면 덮어쓰기 전에 확인
+  if (existing?.slot_id && (existing.interview_round || 1) !== _schedRound) {
+    if (!confirm(`이 지원자는 ${existing.interview_round || 1}차 면접 일정이 확정되어 있습니다.\n${_schedRound}차 링크를 발송하면 기존 확정 정보가 교체됩니다. 계속할까요?`)) return;
+  }
   if (existing) {
     // 재발송 시 이전 응답(참석불가/미참석) 초기화
     const base = { token, slot_id: null, expires_at: expiresAt, selected_at: null, interview_round: _schedRound };
@@ -6182,7 +6207,7 @@ async function sendScheduleEmail() {
       <div style="background:var(--surface2);border-radius:var(--rxs);padding:10px;font-size:11px;word-break:break-all;color:#534AB7;cursor:pointer" onclick="navigator.clipboard.writeText('${selectionUrl}');showToast('✓ 복사됨')">${selectionUrl}</div>
       <div style="font-size:11px;color:var(--text3);margin-top:6px">클릭하면 복사됩니다</div>
       <div style="margin-top:10px;font-size:12px;font-weight:600">후보 시간:</div>
-      ${slots.map(s=>`<div style="font-size:12px;color:#444;padding:3px 0">• ${s}</div>`).join('')}
+      ${slots.map(s=>`<div style="font-size:12px;color:#444;padding:3px 0">• ${esc(s)}</div>`).join('')}
     </div>`;
   document.getElementById('confirmYes').style.display = 'none';
   document.getElementById('confirmNo').textContent = '닫기';
