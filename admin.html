@@ -5738,13 +5738,18 @@ function buildOverlapSection(allInterviewers) {
     byDate[a.slot_date].push(a);
   });
 
-  // 2명 이상 겹치는 날짜만 표시
+  // 오늘 이후 날짜만, 면접관이 1명 이상 입력한 날짜 전부 표시
+  // (이전: 2명 이상 겹치는 날짜만 표시 → 면접관 1명일 때 슬롯 추가 불가 문제)
+  const _t = new Date();
+  const todayStr = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
+  const ivCount = Math.max(1, allInterviewers.length);
   const overlapDates = Object.entries(byDate)
-    .filter(([_, avails]) => {
-      const uniqueAdmins = new Set(avails.map(a => a.admin_id));
-      return uniqueAdmins.size >= 2;
-    })
-    .sort(([a],[b]) => a.localeCompare(b));
+    .filter(([date]) => date >= todayStr)
+    .sort(([a,av],[b,bv]) => {
+      // 가능 인원 많은 날짜 먼저, 같으면 날짜순
+      const ca = new Set(av.map(x => x.admin_id)).size, cb = new Set(bv.map(x => x.admin_id)).size;
+      return (cb - ca) || a.localeCompare(b);
+    });
 
   if (!overlapDates.length) {
     return `<div style="margin-bottom:16px">
@@ -5756,7 +5761,7 @@ function buildOverlapSection(allInterviewers) {
           <span style="color:${myAvail.length?'var(--accent)':'var(--text3)'}">${myAvail.length}개 입력${myAvail.length?'':' (미입력)'}</span>
         </div>`;
       }).join('')}
-      <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:center">아직 겹치는 날짜 없음</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:center">아직 입력된 가능 날짜 없음</div>
     </div>`;
   }
 
@@ -5769,7 +5774,7 @@ function buildOverlapSection(allInterviewers) {
         <span style="color:${cnt?'var(--accent)':'var(--text3)'}">${cnt}개 입력</span>
       </div>`;
     }).join('')}
-    <div style="font-size:12px;font-weight:700;color:#B25C00;margin:10px 0 6px">🔗 겹치는 날짜 (슬롯 추가 가능)</div>
+    <div style="font-size:12px;font-weight:700;color:#B25C00;margin:10px 0 6px">📋 면접관 가능 날짜 (슬롯 추가 가능)</div>
     ${overlapDates.map(([date, avails]) => {
       const uniqueAdmins = [...new Set(avails.map(a => a.admin_id))];
       const names = uniqueAdmins.map(aid => {
@@ -5807,10 +5812,16 @@ function buildOverlapSection(allInterviewers) {
         ? overlap.map(r => `${formatSlotTime(toTimeStr(r.start))} ~ ${formatSlotTime(toTimeStr(r.end))}`).join(', ')
         : '겹치는 시간 없음';
       const alreadyAdded = _schedSlots.some(s => s.slot_date === date);
-      return `<div style="border:1.5px solid #F5CFA0;background:#FEF3E2;border-radius:var(--rsm);padding:10px;margin-bottom:6px">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:4px">${formatSlotDate(date)}</div>
+      const allAvail = uniqueAdmins.length >= ivCount;
+      const _bd = allAvail ? '#F5CFA0' : 'var(--border)';
+      const _bg = allAvail ? '#FEF3E2' : 'var(--surface2)';
+      const _badge = allAvail
+        ? `<span style="font-size:10px;font-weight:700;color:#3B6D11;background:#EAF3DE;padding:2px 6px;border-radius:10px;margin-left:6px">${ivCount > 1 ? '전원 가능' : '가능'}</span>`
+        : `<span style="font-size:10px;font-weight:700;color:#7A3D00;background:#FEF3E2;padding:2px 6px;border-radius:10px;margin-left:6px">${uniqueAdmins.length}/${ivCount}명 가능</span>`;
+      return `<div style="border:1.5px solid ${_bd};background:${_bg};border-radius:var(--rsm);padding:10px;margin-bottom:6px">
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:4px">${formatSlotDate(date)}${_badge}</div>
         <div style="font-size:11px;color:#7A3D00;margin-bottom:4px">${esc(names.join(', '))} 가능</div>
-        <div style="font-size:12px;font-weight:600;color:#534AB7;margin-bottom:6px">🔗 겹치는 시간: ${overlapStr}</div>
+        <div style="font-size:12px;font-weight:600;color:#534AB7;margin-bottom:6px">🔗 ${uniqueAdmins.length > 1 ? '겹치는 시간' : '가능 시간'}: ${overlapStr}</div>
         ${alreadyAdded
           ? `<div style="font-size:11px;color:#3B6D11;font-weight:600">✓ 슬롯 추가됨</div>`
           : `<button class="btn btn-sm" style="font-size:11px;width:100%" onclick="quickAddSlot('${date}')">이 날짜로 슬롯 추가</button>`}
