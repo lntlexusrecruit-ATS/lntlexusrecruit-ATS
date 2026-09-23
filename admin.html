@@ -1731,14 +1731,18 @@ async function loadJobs() {
   // 1차/2차 면접관 정보 로드
   const jobIds = allJobs.map(j => j.id);
   if (jobIds.length) {
-    const [{ data: iv1 }, { data: iv2 }, { data: rv }] = await Promise.all([
+    const [{ data: iv1 }, { data: iv2 }, rvRes, nmRes] = await Promise.all([
       sb.from('job_interviewers').select('job_id, admin_id, admin_profiles(name)').in('job_id', jobIds),
       sb.from('job_interviewers_2nd').select('job_id, admin_id, admin_profiles(name)').in('job_id', jobIds),
-      sb.from('admin_job_permissions').select('job_posting_id, admin_id, admin_profiles(name)').in('job_posting_id', jobIds)
+      sb.from('admin_job_permissions').select('job_posting_id, admin_id').in('job_posting_id', jobIds),
+      sb.from('admin_profiles').select('id, name')
     ]);
     window._jobInterviewers1st = iv1 || [];
     window._jobInterviewers2nd = iv2 || [];
-    window._jobReviewers = rv || [];   // 서류검토 담당자 (공고 카드 표시용)
+    // 서류검토 담당자 (공고 카드 표시용) — 조인 대신 이름 매핑 (FK 조인 실패 방지)
+    if (rvRes.error) console.error('admin_job_permissions load error', rvRes.error);
+    const _nm = {}; (nmRes.data || []).forEach(a => { _nm[a.id] = a.name; });
+    window._jobReviewers = (rvRes.data || []).map(r => ({ job_posting_id: r.job_posting_id, admin_id: r.admin_id, admin_profiles: { name: _nm[r.admin_id] || '?' } }));
   } else {
     window._jobInterviewers1st = [];
     window._jobInterviewers2nd = [];
