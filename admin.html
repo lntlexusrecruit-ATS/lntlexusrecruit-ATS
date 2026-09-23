@@ -2461,13 +2461,11 @@ async function updateStageById(id, stage) {
 // 면접 일정 잡아달라는 알림 (면접관 배정된 사람에게 잔디)
 async function notifyScheduleNeeded(jobId, applicantName, jobTitle, round) {
   try {
+    // 수신자: 해당 라운드 면접관만 (서류검토 담당자 제외)
     const ivTable = round === 2 ? 'job_interviewers_2nd' : 'job_interviewers';
-    const [{ data: perms }, { data: ivs }] = await Promise.all([
-      sb.from('admin_job_permissions').select('admin_profiles(name, email)').eq('job_posting_id', jobId),
-      sb.from(ivTable).select('admin_profiles(name, email)').eq('job_id', jobId)
-    ]);
+    const { data: ivs } = await sb.from(ivTable).select('admin_profiles(name, email)').eq('job_id', jobId);
     const emailSet = new Set();
-    [...(perms||[]), ...(ivs||[])].forEach(p => {
+    (ivs||[]).forEach(p => {
       if (p.admin_profiles?.email) emailSet.add(p.admin_profiles.email);
     });
     const emails = [...emailSet];
@@ -4279,14 +4277,10 @@ async function sendJandi(emails, body, info) {
 // 검토 요청 알림 (관리자검토 단계 이동 시)
 async function notifyReviewRequired(jobId, applicantName, jobTitle) {
   try {
-    // 이 공고에 배정된 manager + 1차/2차 면접관 전체 조회
-    const [{ data: perms }, { data: ivs1 }, { data: ivs2 }] = await Promise.all([
-      sb.from('admin_job_permissions').select('admin_id, admin_profiles(name, email)').eq('job_posting_id', jobId),
-      sb.from('job_interviewers').select('admin_id, admin_profiles(name, email)').eq('job_id', jobId),
-      sb.from('job_interviewers_2nd').select('admin_id, admin_profiles(name, email)').eq('job_id', jobId)
-    ]);
+    // 수신자: 서류검토 담당자(admin_job_permissions)만 (면접관 제외)
+    const { data: perms } = await sb.from('admin_job_permissions').select('admin_id, admin_profiles(name, email)').eq('job_posting_id', jobId);
     const recipients = new Map();
-    [...(perms||[]), ...(ivs1||[]), ...(ivs2||[])].forEach(p => {
+    (perms||[]).forEach(p => {
       if (p.admin_profiles?.email) recipients.set(p.admin_profiles.email, p.admin_profiles.name);
     });
     if (!recipients.size) return;
