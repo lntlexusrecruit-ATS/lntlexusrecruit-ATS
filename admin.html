@@ -1923,9 +1923,8 @@ async function saveJob() {
     } else {
       wantIds = [...new Set([...curIds, ...checkedInterviewers, ...checkedInterviewers2nd])];
     }
-    // 슈퍼어드민은 권한 테이블 불필요
-    const superIds = new Set(allAdmins.filter(a => a.role === 'superadmin').map(a => a.id));
-    const toAdd = wantIds.filter(id => !curIds.includes(id) && !superIds.has(id));
+    // 슈퍼어드민도 서류검토 담당자로 지정 가능 (표시·알림 대상에 포함)
+    const toAdd = wantIds.filter(id => !curIds.includes(id));
     if (toAdd.length) await sb.from('admin_job_permissions').insert(toAdd.map(aid => ({ admin_id: aid, job_posting_id: jobId, granted_by: currentAdmin.id })));
   } catch(e) { console.error('perm sync error', e); }
   closeJobForm(); await loadJobs(); showToast(editJobId ? '✓ 공고 수정 완료' : '✓ 공고 등록 완료');
