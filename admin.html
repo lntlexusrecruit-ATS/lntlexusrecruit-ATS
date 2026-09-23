@@ -1013,7 +1013,7 @@ function safeUrl(u) {
     <div class="field"><label>부서</label><input type="text" id="aDept" placeholder="마케팅팀"></div>
     <div class="field"><label>역할</label><select id="aRole"><option value="manager">일반 관리자</option><option value="superadmin">슈퍼어드민</option></select></div>
     <div class="field">
-      <label>접근 가능 공고</label>
+      <label>서류검토 담당 공고 <span style="font-size:11px;font-weight:400;color:var(--text3)">(검토 단계 합격/불합격 권한 · 면접관 지정은 공고 편집에서)</span></label>
       <div id="aJobPerms" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;max-height:200px;overflow-y:auto"></div>
     </div>
     <div class="err hidden" id="adminFormErr"></div>
@@ -1063,7 +1063,8 @@ function safeUrl(u) {
     <div class="field"><label>부서</label><input type="text" id="eDept" placeholder="마케팅팀"></div>
     <div class="field"><label>역할</label><select id="eRole" onchange="toggleEJobPerms()"><option value="manager">일반 관리자</option><option value="superadmin">슈퍼어드민</option></select></div>
     <div id="eJobPermsWrap" class="field">
-      <label style="font-size:13px;font-weight:600">접근 가능 공고</label>
+      <label style="font-size:13px;font-weight:600">서류검토 담당 공고 <span style="font-size:11px;font-weight:400;color:var(--text3)">(검토 단계 합격/불합격 권한)</span></label>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">면접관 지정은 채용 공고 편집 화면에서 합니다. 면접관은 여기 체크 없이도 해당 공고를 볼 수 있습니다.</div>
       <div id="eJobPerms" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:250px;overflow-y:auto"></div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
@@ -1730,15 +1731,18 @@ async function loadJobs() {
   // 1차/2차 면접관 정보 로드
   const jobIds = allJobs.map(j => j.id);
   if (jobIds.length) {
-    const [{ data: iv1 }, { data: iv2 }] = await Promise.all([
+    const [{ data: iv1 }, { data: iv2 }, { data: rv }] = await Promise.all([
       sb.from('job_interviewers').select('job_id, admin_id, admin_profiles(name)').in('job_id', jobIds),
-      sb.from('job_interviewers_2nd').select('job_id, admin_id, admin_profiles(name)').in('job_id', jobIds)
+      sb.from('job_interviewers_2nd').select('job_id, admin_id, admin_profiles(name)').in('job_id', jobIds),
+      sb.from('admin_job_permissions').select('job_posting_id, admin_id, admin_profiles(name)').in('job_posting_id', jobIds)
     ]);
     window._jobInterviewers1st = iv1 || [];
     window._jobInterviewers2nd = iv2 || [];
+    window._jobReviewers = rv || [];   // 서류검토 담당자 (공고 카드 표시용)
   } else {
     window._jobInterviewers1st = [];
     window._jobInterviewers2nd = [];
+    window._jobReviewers = [];
   }
   document.getElementById('sbJobs').textContent = allJobs.length;
   document.getElementById('jobCountInfo').textContent = `${allJobs.filter(j=>j.is_active).length} / 15개 활성`;
@@ -1754,11 +1758,18 @@ function renderJobs() {
   const isSuperAdmin = adminProfile?.role === 'superadmin';
   const iv1All = window._jobInterviewers1st || [];
   const iv2All = window._jobInterviewers2nd || [];
+  const rvAll = window._jobReviewers || [];
   c.innerHTML = allJobs.map(j => {
     const iv1 = iv1All.filter(i => i.job_id === j.id).map(i => i.admin_profiles?.name).filter(Boolean);
     const iv2 = iv2All.filter(i => i.job_id === j.id).map(i => i.admin_profiles?.name).filter(Boolean);
-    const ivHtml = (iv1.length || iv2.length) ? `
+    // 서류검토 담당자 배지는 영업직 공고에만 (다른 직군은 면접관이 검토도 겸함)
+    const rv = j.job_category === '영업' ? rvAll.filter(r => r.job_posting_id === j.id).map(r => r.admin_profiles?.name).filter(Boolean) : [];
+    const ivHtml = (iv1.length || iv2.length || rv.length) ? `
       <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
+        ${rv.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:11px;font-weight:600;color:#7A3D00;background:#FEF3E2;padding:2px 8px;border-radius:20px;white-space:nowrap">서류검토</span>
+          ${rv.map(n => `<span style="font-size:12px;color:var(--text2)">${esc(n)}</span>`).join('<span style="color:var(--border)">·</span>')}
+        </div>` : (j.job_category === '영업' ? `<span style="font-size:11px;color:#A32D2D">⚠ 서류검토 담당자 미지정</span>` : '')}
         ${iv1.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:11px;font-weight:600;color:#3C3489;background:#EEEDFE;padding:2px 8px;border-radius:20px;white-space:nowrap">1차면접관</span>
           ${iv1.map(n => `<span style="font-size:12px;color:var(--text2)">${esc(n)}</span>`).join('<span style="color:var(--border)">·</span>')}
@@ -2796,6 +2807,15 @@ async function loadAdmins() {
   const {data}=await sb.from('admin_profiles').select('*').order('created_at');
   allAdmins=data||[];
   const {data:allPerms}=await sb.from('admin_job_permissions').select('*');
+  const [{data:_iv1},{data:_iv2}]=await Promise.all([
+    sb.from('job_interviewers').select('job_id, admin_id'),
+    sb.from('job_interviewers_2nd').select('job_id, admin_id')
+  ]);
+  const ivJobsOf = id => {
+    const j1=(_iv1||[]).filter(x=>x.admin_id===id).map(x=>x.job_id);
+    const j2=(_iv2||[]).filter(x=>x.admin_id===id).map(x=>x.job_id);
+    return [...new Set([...j1,...j2])].map(jid=>{const j=allJobs.find(x=>x.id===jid);return j?{title:j.title,r1:j1.includes(jid),r2:j2.includes(jid)}:null;}).filter(Boolean);
+  };
   const c=document.getElementById('adminsContent');
   if(!allAdmins.length){c.innerHTML='<div class="empty-state"><div class="icon">👤</div><p>등록된 관리자가 없습니다</p></div>';return;}
   c.innerHTML=allAdmins.map(a=>{
@@ -2806,7 +2826,11 @@ async function loadAdmins() {
       <div class="admin-info">
         <div class="admin-name">${esc(a.name)} <span class="role-badge ${a.role==='superadmin'?'role-super':'role-manager'}">${a.role==='superadmin'?'슈퍼어드민':'관리자'}</span> ${!a.is_active?'<span style="font-size:11px;color:var(--r600)">(비활성)</span>':''} ${a.must_change_password?'<span style="font-size:11px;color:var(--text3)" title="다음 로그인 시 새 비밀번호 설정 필요">🔑 임시비번</span>':''}</div>
         <div class="admin-email">${esc(a.email)} ${a.department?'· '+esc(a.department):''}</div>
-        ${a.role!=='superadmin'?`<div class="admin-perms">${permJobs.length?permJobs.map(j=>`<span class="perm-tag">${esc(j.title)}</span>`).join(''):'<span style="font-size:11px;color:var(--text3)">권한 없음</span>'}</div>`:'<div style="font-size:11px;color:var(--a600);margin-top:4px">모든 공고 접근 가능</div>'}
+        ${a.role!=='superadmin'?(()=>{const ivJobs=ivJobsOf(a.id);return `<div class="admin-perms">
+          ${permJobs.map(j=>`<span class="perm-tag" title="서류검토 담당">📋 ${esc(j.title)}</span>`).join('')}
+          ${ivJobs.map(j=>`<span class="perm-tag" style="background:#EEEDFE;color:#3C3489" title="면접관">🎤 ${esc(j.title)}${j.r1&&j.r2?' (1·2차)':j.r2?' (2차)':' (1차)'}</span>`).join('')}
+          ${!permJobs.length&&!ivJobs.length?'<span style="font-size:11px;color:var(--text3)">배정된 공고 없음</span>':''}
+        </div>`;})():'<div style="font-size:11px;color:var(--a600);margin-top:4px">모든 공고 접근 가능</div>'}
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="btn btn-sm btn-primary" onclick="openAdminEdit('${a.id}')">수정</button>
