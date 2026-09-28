@@ -931,7 +931,7 @@ function safeUrl(u) {
       </div>
       <div id="tabCareer" class="tab-content">
         <div class="section"><div class="section-title">학력</div><div id="mEdu"></div></div>
-        <div class="section"><div class="section-title">경력</div><div id="mWork"></div></div>
+        <div class="section"><div class="section-title" id="mCareerTitle">경력</div><div id="mWork"></div></div>
       </div>
       <div id="tabExtra" class="tab-content">
         <div class="section"><div class="section-title">자격증</div><div id="mCerts"></div></div>
@@ -2542,6 +2542,42 @@ function renderRejectReasons(app) {
   }
 }
 
+// ── 경력 기간 계산 (공통) ────────────────────────────────
+// 기준: 입사월·퇴사월 모두 포함 (예: 2020-01 ~ 2020-12 = 1년)
+//       겹치는 기간(동시 재직)은 한 번만 계산 / 미래 퇴사월은 이번 달까지만
+function _ymIndex(s) {
+  if (!s) return null;
+  const [y, m] = String(s).split('-').map(Number);
+  if (!y || !m) return null;
+  return y * 12 + (m - 1);
+}
+function _nowYmIndex() { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); }
+function careerRange(c) {
+  if (!c || c.is_no_experience) return null;
+  const s = _ymIndex(c.start_month);
+  let e = c.is_current ? _nowYmIndex() : _ymIndex(c.end_month);
+  if (s == null || e == null) return null;
+  e = Math.min(e, _nowYmIndex());
+  if (e < s) return null;
+  return [s, e];
+}
+function fmtCareerMonths(n) {
+  if (!n) return '';
+  const y = Math.floor(n / 12), m = n % 12;
+  return y > 0 && m > 0 ? `${y}년 ${m}개월` : y > 0 ? `${y}년` : `${m}개월`;
+}
+function calcTotalCareerText(careers) {
+  const ranges = (careers || []).map(careerRange).filter(Boolean).sort((a, b) => a[0] - b[0]);
+  let total = 0, cur = null;
+  ranges.forEach(([s, e]) => {
+    if (!cur) { cur = [s, e]; return; }
+    if (s <= cur[1]) { cur[1] = Math.max(cur[1], e); }
+    else { total += cur[1] - cur[0] + 1; cur = [s, e]; }
+  });
+  if (cur) total += cur[1] - cur[0] + 1;
+  return fmtCareerMonths(total);
+}
+
 async function updateStageById(id, stage, extra) {
   const app = allApps.find(a => a.id === id);
   const prevStage = app?.stage;
@@ -2665,33 +2701,20 @@ async function openModal(id) {
       <div class="exp-period">📅 ${esc(e.start_month)||''} ~ ${esc(e.end_month)||''}${e.status?' · '+esc(e.status):''}</div>
       ${e.gpa ? `<div class="exp-salary">📊 학점 ${esc(e.gpa)}</div>` : ''}
     </div>`).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
-  // 총 경력 계산
-  const calcTotalCareer = (careers) => {
-    let totalMonths = 0;
-    (careers||[]).filter(c => !c.is_no_experience && c.start_month).forEach(c => {
-      const parseYM = s => { if (!s) return null; const [y,m] = s.split('-').map(Number); return y*12 + (m||1); };
-      const start = parseYM(c.start_month);
-      const end = c.is_current ? (new Date().getFullYear()*12 + new Date().getMonth()+1) : parseYM(c.end_month);
-      if (start && end && end > start) totalMonths += end - start;
-    });
-    if (!totalMonths) return '';
-    const y = Math.floor(totalMonths/12), m = totalMonths%12;
-    return y > 0 && m > 0 ? `${y}년 ${m}개월` : y > 0 ? `${y}년` : `${m}개월`;
-  };
-  const totalCareer = calcTotalCareer(careers);
-  const careerSectionTitle = document.querySelector('#tabCareer .section-title:last-of-type') ||
-    [...document.querySelectorAll('#tabCareer .section-title')].find(el => el.textContent === '경력');
-  if (careerSectionTitle && totalCareer) {
-    careerSectionTitle.innerHTML = `경력 <span style="font-size:12px;font-weight:500;color:#3C3489;background:#EEEDFE;padding:2px 8px;border-radius:20px;margin-left:6px">총 ${totalCareer}</span>`;
+  // 총 경력 계산 (지원자마다 항상 새로 표시 — 이전 지원자 값 잔존 방지)
+  const totalCareer = calcTotalCareerText(careers);
+  const careerSectionTitle = document.getElementById('mCareerTitle');
+  if (careerSectionTitle) {
+    careerSectionTitle.innerHTML = totalCareer
+      ? `경력 <span style="font-size:12px;font-weight:500;color:#3C3489;background:#EEEDFE;padding:2px 8px;border-radius:20px;margin-left:6px">총 ${totalCareer}</span>`
+      : '경력';
   }
   // 경력 카드 렌더링
   const renderCareerPeriod = (c) => {
     const start = c.start_month || '';
     const end = c.is_current ? '현재' : (c.end_month || '');
-    const parseYM = s => { if (!s || s==='현재') return null; const [y,m] = s.split('-').map(Number); return y*12+(m||1); };
-    const s = parseYM(start), e = c.is_current ? (new Date().getFullYear()*12+new Date().getMonth()+1) : parseYM(end);
-    let duration = '';
-    if (s && e && e > s) { const d=e-s; const y=Math.floor(d/12),m=d%12; duration = y>0&&m>0?` (${y}년 ${m}개월)`:y>0?` (${y}년)`:` (${m}개월)`; }
+    const r = careerRange(c);
+    const duration = r ? ` (${fmtCareerMonths(r[1] - r[0] + 1)})` : '';
     return `${start} ~ ${end}${duration}`;
   };
   document.getElementById('mWork').innerHTML=(careers||[]).length?(careers||[]).map(c=>
@@ -4525,13 +4548,8 @@ async function downloadResume(appId) {
 
     // 경력 총기간 계산 함수
     const calcPeriod = (start, end, isCurrent) => {
-      if (!start) return '';
-      const s = new Date(start + '-01');
-      const e = isCurrent ? new Date() : (end ? new Date(end + '-01') : new Date());
-      const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
-      const y = Math.floor(months / 12);
-      const m = months % 12;
-      return y > 0 ? (m > 0 ? `${y}년 ${m}개월` : `${y}년`) : `${m}개월`;
+      const r = careerRange({ start_month: start, end_month: end, is_current: isCurrent });
+      return r ? fmtCareerMonths(r[1] - r[0] + 1) : '';
     };
 
     // 경력 데이터 (최대 6개)
@@ -5181,19 +5199,7 @@ async function renderInterviewSession(app) {
     if (m < 0 || (m === 0 && today.getDate() < b.getDate())) age--;
     return age;
   };
-  const calcTotalCareerIv = (careers) => {
-    let totalMonths = 0;
-    (careers||[]).filter(c => !c.is_no_experience && c.start_month).forEach(c => {
-      const parseYM = s => { if (!s) return null; const [y,m] = s.split('-').map(Number); return y*12+(m||1); };
-      const start = parseYM(c.start_month);
-      const end = c.is_current ? (new Date().getFullYear()*12+new Date().getMonth()+1) : parseYM(c.end_month);
-      if (start && end && end > start) totalMonths += end - start;
-    });
-    if (!totalMonths) return '';
-    const y = Math.floor(totalMonths/12), m = totalMonths%12;
-    return y > 0 && m > 0 ? `${y}년 ${m}개월` : y > 0 ? `${y}년` : `${m}개월`;
-  };
-  const totalCareerIv = calcTotalCareerIv(careers);
+  const totalCareerIv = calcTotalCareerText(careers);
 
   const _ivPhotoUrl = app.photo_url ? await afUrl(app.photo_url) : null;
   const photoHtml = _ivPhotoUrl
