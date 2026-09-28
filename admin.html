@@ -911,6 +911,7 @@ function safeUrl(u) {
         <button class="btn btn-pass" onclick="passApplicant()">✓ 합격</button>
         <button class="btn btn-fail" onclick="failApplicant()">✕ 불합격</button>
       </div>
+      <div id="mRejectReasons" class="hidden" style="margin-top:10px;padding:10px 14px;background:var(--r50);border-radius:8px;font-size:13px;color:var(--r600);line-height:1.6"></div>
 
       <div style="height:16px"></div>
 
@@ -957,6 +958,20 @@ function safeUrl(u) {
     <div class="confirm-btns">
       <button class="btn btn-primary" id="confirmYes" onclick="confirmAction(true)">예</button>
       <button class="btn" id="confirmNo" onclick="confirmAction(false)">아니요</button>
+    </div>
+  </div>
+</div>
+
+<!-- 서류 불합격 사유 선택 -->
+<div id="rejectReasonModal" class="confirm-modal hidden">
+  <div class="confirm-inner" style="width:400px;text-align:left">
+    <div class="confirm-title" style="text-align:center">서류 불합격 처리</div>
+    <div class="confirm-sub" style="text-align:center;margin-bottom:14px">불합격 사유를 선택해 주세요 (복수 선택 가능)</div>
+    <div id="rejectReasonList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:18px;line-height:1.5">내부 기록용이며 지원자에게 표시되지 않습니다.</div>
+    <div class="confirm-btns">
+      <button class="btn btn-fail" onclick="submitRejectReasons()">불합격 처리</button>
+      <button class="btn" onclick="closeRejectReasonModal()">취소</button>
     </div>
   </div>
 </div>
@@ -2253,8 +2268,9 @@ async function passApplicant() {
     showToast('이미 최종합격 상태입니다');
 
   } else {
-    // 불합격 → 복구
-    await updateStageById(currentAppId, '지원완료');
+    // 불합격 → 복구 (서류 불합격 사유도 초기화)
+    const _clear = (Array.isArray(app.doc_reject_reasons) && app.doc_reject_reasons.length) ? { doc_reject_reasons: null } : undefined;
+    if (!(await updateStageById(currentAppId, '지원완료', _clear))) return;
     showToast('✓ 지원완료 단계로 복구했습니다');
     updateModalStage('지원완료');
   }
@@ -2460,20 +2476,78 @@ async function failApplicant() {
       }
     }
   }
+  // ★ 서류 검토 단계 → 불합격 사유(다중 선택) 입력 후 처리
+  if (app && DOC_REVIEW_STAGES.includes(stage || '지원완료')) {
+    openRejectReasonModal();
+    return;
+  }
   showConfirm('불합격 처리', '이 지원자를 불합격 처리하시겠습니까?', async (yes) => {
     if (!yes) return;
-    await updateStageById(currentAppId, '불합격');
+    if (!(await updateStageById(currentAppId, '불합격'))) return;
     showToast('불합격 처리되었습니다');
     updateModalStage('불합격');
   });
 }
 
-async function updateStageById(id, stage) {
+// ── 서류 불합격 사유 ─────────────────────────────────────
+const DOC_REVIEW_STAGES = ['지원완료','관리자검토','서류검토','서류합격'];
+const DOC_REJECT_REASONS = [
+  '필수 자격요건 미충족 (학력·자격증·면허 등)',
+  '관련 경력 부족',
+  '직무 연관성 낮음',
+  '희망 근무조건 불일치 (연봉·근무지·입사 가능일)',
+  '다른 우수 지원자 다수',
+];
+let _rejectSubmitting = false;
+
+function openRejectReasonModal() {
+  document.getElementById('rejectReasonList').innerHTML = DOC_REJECT_REASONS.map((r, i) =>
+    `<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid rgba(0,0,0,.12);border-radius:8px;cursor:pointer;font-size:14px;color:var(--text)">
+      <input type="checkbox" name="rejectReason" value="${i}" style="width:16px;height:16px;flex-shrink:0"> ${esc(r)}
+    </label>`).join('');
+  document.getElementById('rejectReasonModal').classList.remove('hidden');
+}
+
+function closeRejectReasonModal() {
+  document.getElementById('rejectReasonModal').classList.add('hidden');
+}
+
+async function submitRejectReasons() {
+  if (_rejectSubmitting) return;
+  const picked = [...document.querySelectorAll('#rejectReasonList input[name="rejectReason"]:checked')]
+    .map(cb => DOC_REJECT_REASONS[Number(cb.value)]).filter(Boolean);
+  if (!picked.length) { showToast('불합격 사유를 1개 이상 선택해 주세요'); return; }
+  _rejectSubmitting = true;
+  try {
+    const ok = await updateStageById(currentAppId, '불합격', { doc_reject_reasons: picked });
+    if (!ok) return;
+    closeRejectReasonModal();
+    showToast('불합격 처리되었습니다');
+    updateModalStage('불합격');
+  } finally {
+    _rejectSubmitting = false;
+  }
+}
+
+function renderRejectReasons(app) {
+  const el = document.getElementById('mRejectReasons');
+  if (!el) return;
+  const reasons = Array.isArray(app?.doc_reject_reasons) ? app.doc_reject_reasons : [];
+  if (app?.stage === '불합격' && reasons.length) {
+    el.innerHTML = `<b>서류 불합격 사유</b><br>${reasons.map(r => '· ' + esc(r)).join('<br>')}`;
+    el.classList.remove('hidden');
+  } else {
+    el.innerHTML = '';
+    el.classList.add('hidden');
+  }
+}
+
+async function updateStageById(id, stage, extra) {
   const app = allApps.find(a => a.id === id);
   const prevStage = app?.stage;
-  const { error } = await sb.from('applications').update({ stage, updated_at: new Date().toISOString() }).eq('id', id);
+  const { error } = await sb.from('applications').update({ ...(extra || {}), stage, updated_at: new Date().toISOString() }).eq('id', id);
   if (error) { showToast('저장 실패: ' + error.message); return false; }
-  if (app) app.stage = stage;
+  if (app) { Object.assign(app, extra || {}); app.stage = stage; }
   renderPipeline();
 
   // 1차/2차 면접 단계로 "새로" 진입한 경우 → 해당 차수 면접관에게 일정 요청 알림
@@ -2508,6 +2582,7 @@ function updateModalStage(stage) {
   const stageInfo = PIPELINE.find(p => p.key === stage) || PIPELINE[0];
   document.getElementById('mCurrentStage').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${stage}</span>`;
   document.getElementById('mBadges').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${stage}</span>`;
+  renderRejectReasons(allApps.find(a => a.id === currentAppId));
 }
 
 // ── 확인 팝업 ────────────────────────────────────────────
@@ -2550,6 +2625,7 @@ async function openModal(id) {
   }
   document.getElementById('mBadges').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${esc(app.stage)||'지원완료'}</span>${(app.apply_source||[]).map(s=>`<span class="stage-badge" style="background:var(--surface2);color:var(--text2)">${esc(s)}</span>`).join('')}`;
   document.getElementById('mCurrentStage').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${app.stage||'지원완료'}</span>`;
+  renderRejectReasons(app);
   // 만나이 계산
   const calcAge = (birth) => {
     if (!birth) return '';
