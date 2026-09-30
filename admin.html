@@ -1530,11 +1530,12 @@ async function loadHome() {
 }
 
 // 일반 채용 공고 기준 할 일 4종 계산 (jobIds: 여러 개 또는 한 개)
-function computeTodos(jobIds) {
+// reviewStage: '검토 필요'로 셀 단계 (슈퍼어드민 = 지원완료 / 서류검토 담당자 = 관리자검토 / null = 표시 안 함)
+function computeTodos(jobIds, reviewStage = '지원완료') {
   const jobIdSet = new Set(jobIds);
   const apps = allApps.filter(a => !a.is_draft && jobIdSet.has(a.job_posting_id));
 
-  const reviewNeeded = apps.filter(a => (a.stage || '지원완료') === '지원완료');
+  const reviewNeeded = reviewStage ? apps.filter(a => (a.stage || '지원완료') === reviewStage) : [];
 
   // 현재 단계의 면접 라운드 (1차면접 → 1, 2차면접 → 2, 그 외 → 0)
   const roundOf = a => a.stage === '2차면접' ? 2 : a.stage === '1차면접' ? 1 : 0;
@@ -1651,8 +1652,11 @@ function jobTodoRowHtml(jobMeta, todos, isDispatch) {
 }
 
 // 공고 목록(jobs)과 postings(파견) 각각을 순회해서 할일이 있는(또는 전체) 공고 행 렌더
-function jobByJobListHtml(jobs, postings) {
-  const jobRows = jobs.map(j => jobTodoRowHtml(j, computeTodos([j.id]), false));
+// asReviewer=true: 일반 관리자 홈 — 서류검토 담당 공고는 '관리자검토' 단계를 검토 필요로 표시
+function jobByJobListHtml(jobs, postings, asReviewer = false) {
+  const permIds = new Set(window._myPermJobIds || []);
+  const reviewStageOf = j => !asReviewer ? '지원완료' : (permIds.has(j.id) ? '관리자검토' : null);
+  const jobRows = jobs.map(j => jobTodoRowHtml(j, computeTodos([j.id], reviewStageOf(j)), false));
   const postingRows = postings.map(p => jobTodoRowHtml(p, computeDispatchTodos([p.id]), true));
   const allRows = [...jobRows, ...postingRows];
   if (!allRows.length) return '<div class="empty-stats">표시할 공고가 없습니다.</div>';
@@ -1715,10 +1719,10 @@ function renderHome() {
     const myPostingIds = myAssignedDispatchPostingIds();
     const myJobs = allJobs.filter(j => myJobIds.includes(j.id));
     const myPostings = allDispatchPostingsHome.filter(p => myPostingIds.includes(p.id));
-    html += `<div class="stats-section-label">내가 면접관으로 배정된 공고</div>`;
+    html += `<div class="stats-section-label">내가 담당하는 공고 (서류검토·면접)</div>`;
     if (myJobs.length || myPostings.length) {
       html += `<div style="font-size:12px;color:var(--text2);margin-bottom:10px">숫자를 클릭하면 해당 공고의 처리 화면으로 이동합니다</div>`;
-      html += jobByJobListHtml(myJobs, myPostings);
+      html += jobByJobListHtml(myJobs, myPostings, true);
     } else {
       html += `<div class="empty-stats">현재 면접관으로 배정된 공고가 없습니다. 관리자에게 문의해주세요.</div>`;
     }
