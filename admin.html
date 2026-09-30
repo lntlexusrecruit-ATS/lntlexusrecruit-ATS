@@ -2585,8 +2585,29 @@ function calcTotalCareerText(careers) {
 async function updateStageById(id, stage, extra) {
   const app = allApps.find(a => a.id === id);
   const prevStage = app?.stage;
-  const { error } = await sb.from('applications').update({ ...(extra || {}), stage, updated_at: new Date().toISOString() }).eq('id', id);
+  // ★ 동시 수정 방지: 내 화면에 보이던 단계가 DB에서도 그대로일 때만 변경
+  //   (다른 관리자가 먼저 바꾼 지원자를 오래된 화면에서 덮어쓰는 문제 방지)
+  let _q = sb.from('applications').update({ ...(extra || {}), stage, updated_at: new Date().toISOString() }).eq('id', id);
+  if (app) _q = prevStage == null ? _q.is('stage', null) : _q.eq('stage', prevStage);
+  const { data: _upd, error } = await _q.select('id');
   if (error) { showToast('저장 실패: ' + error.message); return false; }
+  if (!_upd || !_upd.length) {
+    const { data: cur } = await sb.from('applications').select('stage').eq('id', id).maybeSingle();
+    if (app && cur && (cur.stage ?? null) !== (prevStage ?? null)) {
+      // 다른 관리자가 먼저 변경함 → 화면을 최신 값으로 맞추고 안내
+      if (app) app.stage = cur.stage;
+      renderPipeline();
+      if (currentAppId === id && typeof updateModalStage === 'function') updateModalStage(cur.stage || '지원완료');
+      showToast('⚠️ 다른 관리자가 먼저 변경했습니다');
+      alert(`이 지원자는 이미 다른 관리자가 "${cur.stage || '지원완료'}" 단계로 변경했습니다.\n\n화면을 최신 상태로 바꿨습니다. 확인 후 다시 처리해 주세요.`);
+      return false;
+    }
+    // DB 권한(RLS)에 막히면 오류 없이 0건 처리됨
+    showToast('⛔ 저장되지 않았습니다 (DB 권한 없음)');
+    alert('단계 변경이 저장되지 않았습니다.\n\n이 계정에 지원서 수정 권한(DB 정책)이 없습니다.\n슈퍼어드민에게 문의해 주세요.');
+    console.error('applications update blocked', { id, stage, admin: currentAdmin?.id });
+    return false;
+  }
   if (app) { Object.assign(app, extra || {}); app.stage = stage; }
   renderPipeline();
 
