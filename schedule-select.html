@@ -95,6 +95,8 @@ async function init() {
 
   // 이미 선택 완료
   if (data.status === 'already_selected') {
+    const _te = Date.parse(data.expiresAt);
+    window._expiresAt = isNaN(_te) ? null : new Date(_te);
     showAlreadySelected(data.name, data.slot);
     return;
   }
@@ -231,10 +233,7 @@ function showSuccess(date, time, loc) {
       <div class="success-icon">🎉</div>
       <div class="success-title">면접 일정이 확정되었습니다</div>
       ${bigScheduleCard(date, time, loc)}
-      <div id="expireNotice" style="display:none;margin:0 0 14px;padding:12px 14px;background:#FFF4E5;border:1.5px solid #F5C77E;border-radius:12px;text-align:left">
-        <div style="font-size:14px;font-weight:700;color:#9A5B00">⏱ 이 링크는 <span id="expireCountdown" style="font-size:16px">--분 --초</span> 뒤에 만료됩니다</div>
-        <div style="font-size:13px;color:#7A4A00;margin-top:4px;line-height:1.5">만료 후에는 이 페이지를 다시 열 수 없습니다.<br><strong>지금 일정과 장소를 꼭 확인하고, 화면을 캡처해 두세요.</strong></div>
-      </div>
+      ${expireNoticeHtml()}
       <div class="success-sub">
         위 일정으로 면접이 진행됩니다. 일정과 장소를 꼭 확인해 주세요.<br><br>
         <div style="margin-top:12px;padding:12px;background:#F5F4F0;border-radius:10px">
@@ -247,12 +246,21 @@ function showSuccess(date, time, loc) {
   startExpireCountdown();
 }
 
+// 확정 화면 안내: 캡처·메모 안내는 항상 표시 (만료시각을 알면 카운트다운, 모르면 고정 문구)
+function expireNoticeHtml() {
+  return `
+      <div id="expireNotice" style="margin:0 0 14px;padding:12px 14px;background:#FFF4E5;border:1.5px solid #F5C77E;border-radius:12px;text-align:left">
+        <div style="font-size:14px;font-weight:700;color:#9A5B00">⏱ 이 링크는 <span id="expireCountdown" style="font-size:16px">발송 후 2시간이 지나면</span> 만료됩니다</div>
+        <div style="font-size:13px;color:#7A4A00;margin-top:4px;line-height:1.5">만료 후에는 이 페이지를 다시 열 수 없습니다.<br><strong>지금 일정과 장소를 꼭 확인하고, 화면을 캡처하거나 메모해 두세요.</strong></div>
+      </div>`;
+}
+
 // 확정 화면: 링크 만료까지 남은 시간 카운트다운 (분·초)
 function startExpireCountdown() {
   const box = document.getElementById('expireNotice');
   const el = document.getElementById('expireCountdown');
   if (!box || !el || !window._expiresAt) return;
-  box.style.display = '';
+  if (window._expireTimer) clearTimeout(window._expireTimer);
   const tick = () => {
     if (!document.getElementById('expireCountdown')) return; // 화면 전환 시 중단
     const diff = Math.max(0, window._expiresAt - new Date());
@@ -263,8 +271,8 @@ function startExpireCountdown() {
       box.querySelector('div').innerHTML = '⏱ 이 링크는 <strong>만료</strong>되었습니다';
       return;
     }
-    el.textContent = `${totalMin}분 ${String(sec).padStart(2,'0')}초`;
-    setTimeout(tick, 1000);
+    el.textContent = `${totalMin}분 ${String(sec).padStart(2,'0')}초 뒤에`;
+    window._expireTimer = setTimeout(tick, 1000);
   };
   tick();
 }
@@ -385,6 +393,7 @@ function showAlreadySelected(name, slot) {
       <div class="success-icon">✅</div>
       <div class="success-title">면접 일정이 확정되어 있습니다</div>
       ${bigScheduleCard(date, time, slot?.slot_location || '')}
+      ${expireNoticeHtml()}
       <div class="success-sub">
         일정 변경이 필요하시면 채용담당자에게 연락해 주세요.<br><br>
         <div style="margin-top:12px;padding:12px;background:#F5F4F0;border-radius:10px">
@@ -394,6 +403,7 @@ function showAlreadySelected(name, slot) {
       </div>
     </div>
   `;
+  startExpireCountdown();
 }
 
 function showError(msg) {
