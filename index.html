@@ -192,9 +192,16 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
 .lp-jobs-col-empty { font-size:13px; color:var(--lp-ink3); text-align:center; padding:32px 8px; }
 .lp-jobs-col .lp-job-card { flex-direction:column; align-items:flex-start; gap:12px; padding:18px 20px; }
 .lp-jobs-col .lp-job-arrow { align-self:flex-end; }
+.lp-jobs-col-chev { display:none; }
 @media (max-width:900px) {
-  .lp-jobs-grid { grid-template-columns:1fr; }
-  .lp-jobs-col { min-height:0; }
+  .lp-jobs-grid { grid-template-columns:1fr; gap:10px; }
+  .lp-jobs-col { min-height:0; padding:0; overflow:hidden; scroll-margin-top:110px; }
+  /* 모바일: 직군 제목만 보이고, 누르면 펼침 */
+  .lp-jobs-col-head { margin:0; padding:16px 18px; cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent; }
+  .lp-jobs-col-chev { display:inline-block; margin-left:auto; font-size:16px; color:var(--lp-ink3); transition:transform .2s; }
+  .lp-jobs-col.open .lp-jobs-col-chev { transform:rotate(180deg); }
+  .lp-jobs-col-body { display:none; padding:0 14px 14px; }
+  .lp-jobs-col.open .lp-jobs-col-body { display:block; }
 }
 
 /* 공고 상세 */
@@ -219,7 +226,12 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
 @media (prefers-reduced-motion: reduce) { .reveal { opacity:1; transform:none; transition:none; } }
 
 @media (max-width:768px) {
-  .lp-nav { padding:0 16px; height:54px; }
+  .lp-nav { padding:6px 12px; height:auto; min-height:54px; flex-wrap:wrap; row-gap:2px; }
+  /* 모바일: 1줄 = 로고 + 로그인/현황 버튼, 2줄 = 인재상·비전·복리후생·채용공고 */
+  #viewLanding .lp-nav > div:last-child { display:contents !important; }
+  #lpNavGuest, #lpNavAuth { order:1; margin-left:auto !important; padding-left:0 !important; border-left:none !important; }
+  #lpNavGuest .lp-nav-link, #lpNavAuth .lp-nav-link { padding:7px 11px; font-size:12.5px; }
+  #viewLanding .lp-nav-menu { order:2; width:100%; justify-content:space-between; }
   .lp-nav-menu { gap:0; }
   .lp-nav-link { padding:8px 9px; font-size:13px; }
   .lp-nav-logo { font-size:16px; }
@@ -739,10 +751,12 @@ async function loadLanding() {
       ${CAT_GROUPS.map(g => {
         const gj = jobs.filter(j => j.job_category === g.key);
         return `<div class="lp-jobs-col">
-          <div class="lp-jobs-col-head">${g.icon} ${g.label} <span class="lp-jobs-col-count">${gj.length}</span></div>
+          <div class="lp-jobs-col-head" onclick="toggleJobCol(this)">${g.icon} ${g.label} <span class="lp-jobs-col-count">${gj.length}</span><span class="lp-jobs-col-chev">▾</span></div>
+          <div class="lp-jobs-col-body">
           ${gj.length
             ? gj.map((j, i) => jobCard(j, i)).join('')
             : '<div class="lp-jobs-col-empty">현재 모집 중인 공고가 없습니다</div>'}
+          </div>
         </div>`;
       }).join('')}
     </div>
@@ -751,6 +765,19 @@ async function loadLanding() {
       ${etcJobs.map((j, i) => jobCard(j, i)).join('')}` : ''}
   `;
   bindReveals(list); // 새로 그린 공고 카드에 리빌 연결
+}
+
+// 모바일: 직군 제목을 누르면 해당 직군 공고만 펼침 (PC는 항상 펼쳐진 3칸)
+function toggleJobCol(head) {
+  if (!window.matchMedia('(max-width:900px)').matches) return;
+  const col = head.closest('.lp-jobs-col');
+  const willOpen = !col.classList.contains('open');
+  document.querySelectorAll('.lp-jobs-col.open').forEach(c => c.classList.remove('open'));
+  if (willOpen) {
+    col.classList.add('open');
+    col.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+    setTimeout(() => col.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
+  }
 }
 
 function showJobDetail(id) {
