@@ -560,8 +560,12 @@ function esc(s) {
 const escapeHtml = esc; // 별칭
 // 지원자가 입력한 링크는 http/https만 허용 (javascript: 등 차단)
 function safeUrl(u) {
-  const s = String(u ?? '').trim();
-  return /^https?:\/\//i.test(s) ? esc(s) : '#';
+  let s = String(u ?? '').trim();
+  if (!s) return '#';
+  // 지원자가 https:// 없이 입력한 주소(예: www.linkedin.com/in/...) 보정
+  if (/^\/\//.test(s)) s = 'https:' + s;
+  else if (!/^[a-z][a-z0-9+.-]*:/i.test(s) && /^[^\s\/]+\.[^\s\/]+/.test(s)) s = 'https://' + s;
+  return /^https?:\/\//i.test(s) ? esc(s) : '#';   // javascript: 등 다른 스킴은 계속 차단
 }
 </script>
 
@@ -2750,6 +2754,7 @@ async function openModal(id) {
           <div class="exp-sub">${esc([c.department, c.position, c.employment_type].filter(Boolean).join(' · '))}</div>
           <div class="exp-period">📅 ${esc(renderCareerPeriod(c))}</div>
           ${c.final_salary ? `<div class="exp-salary">💰 최종연봉 ${c.final_salary.toLocaleString()}만원</div>` : ''}
+          ${c.leave_reason ? `<div class="exp-salary">🚪 ${c.is_current ? '이직 사유' : '퇴직 사유'}: ${esc(c.leave_reason)}</div>` : ''}
           ${c.description ? `<div class="exp-desc">${esc(c.description)}</div>` : ''}
         </div>`
   ).join(''):'<div style="font-size:13px;color:var(--text3)">없음</div>';
@@ -5299,6 +5304,7 @@ async function renderInterviewSession(app) {
               <div class="exp-sub">${esc([c.department,c.position,c.employment_type].filter(Boolean).join(' · '))}</div>
               <div class="exp-period">📅 ${esc(c.start_month)||''} ~ ${c.is_current?'현재':esc(c.end_month)||''}</div>
               ${c.final_salary?`<div class="exp-salary">💰 최종연봉 ${c.final_salary.toLocaleString()}만원</div>`:''}
+              ${c.leave_reason?`<div class="exp-salary">🚪 ${c.is_current?'이직 사유':'퇴직 사유'}: ${esc(c.leave_reason)}</div>`:''}
               ${c.description?`<div class="exp-desc">${esc(c.description)}</div>`:''}
             </div>`).join('')}` : ''}
 

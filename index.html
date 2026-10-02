@@ -1559,10 +1559,10 @@ function buildPayload(isDraft) {
     essay_achievement: fd.essay.q3||null, // 성취/실패경험
     essay_effort: fd.essay.q4||null,      // 노력/계획
     essay_motivation: fd.essay.q5||null,  // 지원동기/포부
-    link_github: _optConsented() ? (fd.extra?.github||null) : null,
-    link_linkedin: _optConsented() ? (fd.extra?.linkedin||null) : null,
-    link_blog: _optConsented() ? (fd.extra?.blog||null) : null,
-    link_portfolio: _optConsented() ? (fd.extra?.portfolio||null) : null,
+    link_github: _optConsented() ? normLink(fd.extra?.github) : null,
+    link_linkedin: _optConsented() ? normLink(fd.extra?.linkedin) : null,
+    link_blog: _optConsented() ? normLink(fd.extra?.blog) : null,
+    link_portfolio: _optConsented() ? normLink(fd.extra?.portfolio) : null,
     portfolio_file_url: _optConsented() ? (fd.extra?.portfolioFileUrl||null) : null,
     photo_url: fd.basic.photoUrl||null,
     veterans_status: _optConsented() ? (fd.basic.veterans||'비해당') : '비해당',
@@ -1698,6 +1698,15 @@ function buildStep(step) {
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
+// 링크 정규화: https:// 없이 입력한 주소에 자동으로 붙임 (빈 값은 null)
+function normLink(u){
+  let v=String(u??'').trim();
+  if(!v) return null;
+  if(/^\/\//.test(v)) v='https:'+v;
+  else if(!/^[a-z][a-z0-9+.-]*:/i.test(v)) v='https://'+v;
+  return v.slice(0,500);
+}
+
 function nextStep(){
   // 스킬 input에 값 있으면 자동 추가
   const skillInput = document.getElementById('skillInput');
@@ -1746,6 +1755,9 @@ function validateStep(step){
     for(let i=0;i<cars.length;i++){
       if(!cars[i].company||!cars[i].company.trim()){ showToast(`경력 ${i+1}의 회사명을 입력해 주세요`); return false; }
       if(!cars[i].startMonth){ showToast(`경력 ${i+1}의 입사년월을 입력해 주세요`); return false; }
+if(!cars[i].current&&!cars[i].endMonth){ showToast(`경력 ${i+1}의 퇴사년월을 입력해 주세요 (재직 중이면 '현재 재직 중'을 체크)`); return false; }
+if(!cars[i].current&&cars[i].endMonth<cars[i].startMonth){ showToast(`경력 ${i+1}의 퇴사년월이 입사년월보다 빠릅니다`); return false; }
+if(!cars[i].leaveReason){ showToast(`경력 ${i+1}의 ${cars[i].current?'이직 사유':'퇴직 사유'}를 선택해 주세요`); return false; }
     }
     return true;
   }
@@ -1942,14 +1954,26 @@ function mkCareerEntry(c,i){
   d.innerHTML=`<div class="entry-header"><span class="entry-label">경력 ${i+1}</span>${i>0?`<button class="entry-remove" onclick="rmEntry('career',${i},'career${i}')">삭제</button>`:''}</div>
   <div class="field-row"><div class="field"><label class="field-label">회사명 <span class="required">*</span></label><input type="text" data-ci="${i}" data-k="company" value="${c.company||''}" placeholder="(주)카카오"></div><div class="field"><label class="field-label">부서/팀</label><input type="text" data-ci="${i}" data-k="dept" value="${c.dept||''}" placeholder="프론트엔드개발팀"></div></div>
   <div class="field-row"><div class="field"><label class="field-label">직급/직책</label><input type="text" data-ci="${i}" data-k="position" value="${c.position||''}" placeholder="선임 개발자"></div><div class="field"><label class="field-label">고용 형태</label><select data-ci="${i}" data-k="type">${['정규직','계약직','인턴','프리랜서'].map(v=>`<option value="${v}" ${(c.type||'정규직')===v?'selected':''}>${v}</option>`).join('')}</select></div></div>
-  <div class="field-row"><div class="field"><label class="field-label">입사년월 <span class="required">*</span></label><input type="month" data-ci="${i}" data-k="startMonth" value="${c.startMonth||''}"></div><div class="field"><label class="field-label">퇴사년월</label><input type="month" data-ci="${i}" data-k="endMonth" value="${c.endMonth||''}" id="cEnd${i}" ${c.current?'disabled':''}></div></div>
+  <div class="field-row"><div class="field"><label class="field-label">입사년월 <span class="required">*</span></label><input type="month" data-ci="${i}" data-k="startMonth" value="${c.startMonth||''}"></div><div class="field"><label class="field-label" id="cEndLbl${i}">퇴사년월 ${c.current?'':'<span class="required">*</span>'}</label><input type="month" data-ci="${i}" data-k="endMonth" value="${c.endMonth||''}" id="cEnd${i}" ${c.current?'disabled':''}></div></div>
   <div class="field" style="margin-bottom:10px;"><label class="check-item ${c.current?'selected':''}" id="curLbl${i}" style="width:fit-content;"><input type="checkbox" ${c.current?'checked':''} onchange="togCur(this,${i})"> 현재 재직 중</label></div>
   <div class="field"><label class="field-label">담당업무(경력기술)</label><textarea data-ci="${i}" data-k="desc" rows="6" placeholder="담당 업무, 주요 프로젝트, 성과를 구체적으로 작성해 주세요.
 예) 법인영업 담당 — 신규 거래처 12곳 개척, 연 매출 5억 원 달성">${c.desc||''}</textarea></div>
-  <div class="field-row"><div class="field"><label class="field-label">퇴직 사유</label><select data-ci="${i}" data-k="leaveReason"><option value="">선택</option>${['이직','계약만료','개인사유','권고사직','기타'].map(v=>`<option value="${v}" ${c.leaveReason===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label class="field-label">최종 연봉 (만원)</label><input type="number" data-ci="${i}" data-k="finalSalary" value="${c.finalSalary||''}" placeholder="6500"></div></div>`;
+  <div class="field-row"><div class="field"><label class="field-label" id="cLrLbl${i}">${c.current?'이직 사유':'퇴직 사유'} <span class="required">*</span></label><select data-ci="${i}" data-k="leaveReason" id="cLr${i}">${leaveReasonOptions(!!c.current, c.leaveReason)}</select></div><div class="field"><label class="field-label">최종 연봉 (만원)</label><input type="number" data-ci="${i}" data-k="finalSalary" value="${c.finalSalary||''}" placeholder="6500"></div></div>`;
   return d;
 }
-function togCur(cb,i){const e=document.getElementById('cEnd'+i),l=document.getElementById('curLbl'+i);if(cb.checked){e.disabled=true;e.value='';l.classList.add('selected');}else{e.disabled=false;l.classList.remove('selected');}}
+function togCur(cb,i){const e=document.getElementById('cEnd'+i),l=document.getElementById('curLbl'+i);if(cb.checked){e.disabled=true;e.value='';l.classList.add('selected');}else{e.disabled=false;l.classList.remove('selected');}
+  // 재직 중 ↔ 퇴사: 사유 라벨·선택지, 퇴사년월 필수 표시 전환
+  const el=document.getElementById('cEndLbl'+i); if(el) el.innerHTML='퇴사년월 '+(cb.checked?'':'<span class="required">*</span>');
+  const ll=document.getElementById('cLrLbl'+i); if(ll) ll.innerHTML=(cb.checked?'이직 사유':'퇴직 사유')+' <span class="required">*</span>';
+  const sel=document.getElementById('cLr'+i); if(sel){ const v=sel.value; sel.innerHTML=leaveReasonOptions(cb.checked,v); }
+}
+// 퇴직 사유(퇴사한 경력) / 이직 사유(현재 재직 중) 선택지
+const LEAVE_REASONS_PAST=['이직','계약만료','개인사유','권고사직','기타'];
+const LEAVE_REASONS_CUR=['경력 개발','처우 개선','근무 환경·조건','회사 사정','개인사유','기타'];
+function leaveReasonOptions(isCurrent,selected){
+  const list=isCurrent?LEAVE_REASONS_CUR:LEAVE_REASONS_PAST;
+  return '<option value="">선택</option>'+list.map(v=>`<option value="${v}" ${selected===v?'selected':''}>${v}</option>`).join('');
+}
 
 // ── Step 3: 자격·수상·어학 ──────────────────────────────
 function buildExtra(){
