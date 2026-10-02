@@ -1185,11 +1185,63 @@ async function showMyApplications() {
         <div style="min-width:0;">
           <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:4px;">${title}</div>
           <div style="font-size:12px;color:var(--text3);">${dept ? dept+' · ' : ''}지원일 ${when}</div>
+          <button onclick="viewMySubmitted('${sub.id}')" style="margin-top:10px;padding:6px 14px;font-size:12.5px;font-weight:500;border:1px solid var(--border2);border-radius:8px;background:var(--surface);color:var(--text);cursor:pointer;">📄 제출한 지원서 보기</button>
         </div>
         ${applicantStatusBadge(sub)}
       </div>`;
     }).join('');
   }
+}
+
+// ── 제출한 지원서 보기 (읽기 전용) ───────────────────────
+// 서버 함수 get_my_application_detail: 본인이 입력한 내용만 반환 (내부 정보 없음)
+async function viewMySubmitted(id) {
+  const { data, error } = await sb.rpc('get_my_application_detail', { p_id: id });
+  if (error || !data) { showToast('지원서를 불러오지 못했습니다'); return; }
+  const E = v => escapeHtml(v == null ? '' : String(v));
+  const a = data.app || {};
+  const row = (label, v) => (v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length)) ? '' :
+    `<div style="display:flex;gap:12px;padding:7px 0;border-bottom:0.5px solid var(--border);font-size:14px">
+       <div style="flex:0 0 110px;color:var(--text3)">${label}</div>
+       <div style="flex:1;color:var(--text);white-space:pre-wrap;word-break:break-word">${Array.isArray(v) ? v.map(E).join(', ') : E(v)}</div></div>`;
+  const sec = (title, inner) => inner ? `<div style="margin-top:22px"><div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px">${title}</div>${inner}</div>` : '';
+  const card = inner => `<div style="padding:10px 12px;border:0.5px solid var(--border);border-radius:10px;margin-bottom:8px;font-size:14px;line-height:1.6">${inner}</div>`;
+  const ym = (s, e, cur) => `${E(s || '')} ~ ${cur ? '재직 중' : E(e || '')}`;
+
+  const basic = [
+    row('성명', a.name), row('영문 성명', a.name_en), row('생년월일', a.birth_date), row('성별', a.gender),
+    row('국적', a.nationality), row('이메일', a.email), row('휴대폰', a.phone), row('주소', a.address),
+    row('희망 연봉', a.desired_salary ? a.desired_salary + '만원' : ''), row('입사 가능일', a.available_start_date),
+    row('근무 형태', a.work_type), row('지원 경로', a.apply_source), row('지원 경로(기타)', a.apply_source_etc),
+    row('추천인', a.referral_name), row('보훈', a.veterans_status), row('장애', a.disability_status),
+    row('병역', a.military_status), row('취미', a.hobby), row('특기', a.specialty), row('보유 스킬', a.skills),
+    row('증명사진', data.has_photo ? '첨부됨' : ''),
+  ].join('');
+  const edu = (data.education || []).map(e => card(`<b>${E(e.school)}</b> ${E(e.major || '')} · ${E(e.degree || '')} · ${E(e.status || '')}<br><span style="color:var(--text3)">${ym(e.start_month, e.end_month)}${e.gpa ? ' · 학점 ' + E(e.gpa) : ''}</span>`)).join('');
+  const work = (data.work_experience || []).map(w => w.is_no_experience ? card('경력 없음 (신입)') :
+    card(`<b>${E(w.company)}</b> ${E(w.department || '')} ${E(w.position || '')} · ${E(w.employment_type || '')}<br>
+      <span style="color:var(--text3)">${ym(w.start_month, w.end_month, w.is_current)}</span>
+      ${w.leave_reason ? `<br><span style="color:var(--text3)">${w.is_current ? '이직 사유' : '퇴직 사유'}: ${E(w.leave_reason)}</span>` : ''}
+      ${w.final_salary ? `<br><span style="color:var(--text3)">최종 연봉: ${E(w.final_salary)}만원</span>` : ''}
+      ${w.description ? `<div style="margin-top:6px;white-space:pre-wrap">${E(w.description)}</div>` : ''}`)).join('');
+  const certs = (data.certifications || []).map(c => card(`${E(c.name)} · ${E(c.issuer || '')} · ${E(c.acquired_month || '')}`)).join('');
+  const langs = (data.language_skills || []).map(l => card(`${E(l.language)} · ${E(l.test_name || '')} ${E(l.score || '')} · 회화 ${E(l.conversation_level || '-')}`)).join('');
+  const awards = (data.awards || []).map(w => card(`[${E(w.category || '')}] ${E(w.name)} · ${E(w.organization || '')} · ${E(w.period || '')}`)).join('');
+  const essays = [['성장 과정', a.essay_growth], ['성격의 장단점', a.essay_strength], ['성취·실패 경험', a.essay_achievement], ['노력·계획', a.essay_effort], ['지원 동기·포부', a.essay_motivation]]
+    .filter(([, v]) => v).map(([t, v]) => card(`<b>${t}</b><div style="margin-top:4px;white-space:pre-wrap">${E(v)}</div>`)).join('');
+  const links = [row('GitHub', a.link_github), row('LinkedIn', a.link_linkedin), row('블로그', a.link_blog), row('포트폴리오', a.link_portfolio), row('포트폴리오 파일', data.has_portfolio_file ? '첨부됨' : '')].join('');
+
+  let ov = document.getElementById('mySubmittedOverlay');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'mySubmittedOverlay'; document.body.appendChild(ov); }
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:30px 14px';
+  ov.innerHTML = `<div style="background:var(--surface);border-radius:16px;max-width:720px;width:100%;padding:26px 24px 30px;position:relative">
+    <button onclick="document.getElementById('mySubmittedOverlay').remove()" style="position:absolute;top:14px;right:14px;border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>
+    <div style="font-size:20px;font-weight:700;color:var(--text)">${E(data.title || '지원서')}</div>
+    <div style="font-size:12.5px;color:var(--text3);margin-top:4px">지원번호 ${E(data.submission_number || '-')} · 제출일 ${data.submitted_at ? new Date(data.submitted_at).toLocaleDateString('ko-KR') : '-'}</div>
+    <div style="font-size:12.5px;color:#7A4A00;background:#FFF4E5;border-radius:8px;padding:9px 12px;margin-top:12px;line-height:1.5">제출한 지원서는 수정할 수 없습니다. 읽기 전용 화면입니다.</div>
+    ${sec('기본 정보', basic)}${sec('학력', edu)}${sec('경력', work)}${sec('자격증', certs)}${sec('어학', langs)}${sec('수상·대외활동', awards)}${sec('자기소개서', essays)}${sec('링크·포트폴리오', links)}
+  </div>`;
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
 }
 
 // ── 지원자에게 보여줄 진행 상태 ─────────────────────────
