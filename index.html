@@ -1142,10 +1142,9 @@ async function showMyApplications() {
     }
   } catch(e){}
 
-  const { data: apps, error } = await sb.from('applications')
-    .select('id, job_posting_id, is_draft, submitted_at, updated_at, job_postings(title, department)')
-    .eq('applicant_id', currentUser.id)
-    .order('updated_at', { ascending: false });
+  // 제출된 지원서는 직접 조회 불가(DB 정책) → 표시용 정보만 돌려주는 함수로 조회
+  const { data: _rows, error } = await sb.rpc('get_my_applications');
+  const apps = (_rows || []).map(r => ({ ...r, job_postings: { title: r.title, department: r.department } }));
 
   const draftBox = document.getElementById('myDraftList');
   const subBox = document.getElementById('mySubmittedList');
@@ -1187,10 +1186,34 @@ async function showMyApplications() {
           <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:4px;">${title}</div>
           <div style="font-size:12px;color:var(--text3);">${dept ? dept+' · ' : ''}지원일 ${when}</div>
         </div>
-        <span style="flex-shrink:0;padding:7px 16px;font-size:13px;font-weight:600;border-radius:20px;background:#E8F5E9;color:#2E7D32;">지원 완료</span>
+        ${applicantStatusBadge(sub)}
       </div>`;
     }).join('');
   }
+}
+
+// ── 지원자에게 보여줄 진행 상태 ─────────────────────────
+// 표시는 서버(get_my_applications)가 계산: 검토 중 / 면접 예정(일시) / 불합격(처리 7일 후)
+function _fmtIvDate(d, t) {
+  const dt = new Date(d + 'T00:00:00+09:00');
+  if (isNaN(dt.getTime())) return '';
+  const days = ['일','월','화','수','목','금','토'];
+  return `${dt.getMonth() + 1}/${dt.getDate()}(${days[dt.getDay()]})${t ? ' ' + String(t).slice(0, 5) : ''}`;
+}
+function _badge(t, bg, c, sub) {
+  return `<div style="flex-shrink:0;text-align:right">
+    <span style="display:inline-block;padding:7px 16px;font-size:13px;font-weight:600;border-radius:20px;background:${bg};color:${c};">${t}</span>
+    ${sub ? `<div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.5">${sub}</div>` : ''}
+  </div>`;
+}
+function applicantStatusBadge(app) {
+  if (app.display_status === '불합격') {
+    return _badge('불합격', '#F1EFE8', '#5F5E5A', '지원해 주셔서 감사합니다.<br>아쉽게도 이번 채용에서는 함께하지 못하게 되었습니다.');
+  }
+  if (app.display_status === '면접 예정') {
+    return _badge('면접 예정', '#E6F1FB', '#185FA5', app.interview_date ? _fmtIvDate(app.interview_date, app.interview_time) : '');
+  }
+  return _badge('검토 중', '#EEEDFE', '#3C3489');
 }
 
 // 현황 화면에서 "○○ 지원하기" → 그 공고 지원서로
@@ -1420,9 +1443,9 @@ async function _showFormInner() {
     resetFormData();
     // 같은 공고에 이미 제출한 지원서가 있으면 중복 지원 차단
     if (jobPostingId) {
-      const { data: done } = await sb.from('applications').select('id')
-        .eq('applicant_id', currentUser.id).eq('job_posting_id', jobPostingId).eq('is_draft', false).limit(1);
-      if (done && done.length) {
+      const { data: _mine } = await sb.rpc('get_my_applications');
+      const done = (_mine || []).filter(r => !r.is_draft && r.job_posting_id === jobPostingId);
+      if (done.length) {
         hideLoading();
         showToast('이미 지원을 완료한 공고입니다');
         showMyApplications();
@@ -1519,7 +1542,9 @@ async function submitApplication() {
   if(!fd.basic.name){showToast('이름을 입력해주세요 (1단계)');return;}
   showLoading('지원서 제출 중...');
   const submissionNumber = 'HF-' + new Date().getFullYear() + '-' + Math.floor(Math.random()*90000+10000);
-  const payload = { ...buildPayload(false), submission_number:submissionNumber, submitted_at:new Date().toISOString() };
+  // ① 임시저장 상태로 본문 저장 → ② 학력·경력·동의 등 저장 → ③ 마지막에 제출 전환
+  //   (제출 후에는 지원자가 지원서를 조회·수정할 수 없으므로 반드시 이 순서)
+  const payload = buildPayload(true);
   let error, appId = applicationId;
   if(appId) {
     const r = await sb.from('applications').update({...payload,updated_at:new Date().toISOString()}).eq('id',appId);
@@ -1530,6 +1555,13 @@ async function submitApplication() {
     if(!error) appId = r.data.id;
   }
   if(!error) { applicationId = appId; await saveSubtables(); }
+  if(!error) {
+    const now = new Date().toISOString();
+    const r = await sb.from('applications')
+      .update({ is_draft:false, submission_number:submissionNumber, submitted_at:now, updated_at:now })
+      .eq('id', appId);
+    error = r.error;
+  }
   hideLoading();
   if(error){showToast('⚠️ 제출 실패: '+error.message);return;}
 
