@@ -1389,6 +1389,11 @@ function onUserActivity() {
   _idleDeadline = Date.now() + IDLE_LIMIT;
   saveLastActivity();
 }
+// 화면으로 돌아오는 즉시 시간 확인 (모바일 백그라운드 대응)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && _idleTick) idleTickFn();
+});
+
 function idleTickFn() {
   const remain = _idleDeadline - Date.now();
   // 카운트다운 표시 갱신
@@ -1400,6 +1405,12 @@ function idleTickFn() {
     badge.textContent = `⏱ 자동 로그아웃까지 ${mm}:${ss}`;
     badge.style.background = remain <= WARN_BEFORE ? '#FDECEC' : 'rgba(255,255,255,0.92)';
     badge.style.color = remain <= WARN_BEFORE ? '#C0392B' : 'var(--text2)';
+  }
+  // 휴대폰 화면 꺼짐·앱 전환 등으로 타이머가 멈춰 있다가 돌아왔을 때 이미 30분이 지났으면
+  // 연장 팝업 없이 바로 로그아웃 (기존: 돌아온 순간 연장 팝업이 떠서 2분 더 쓸 수 있었음)
+  if (remain <= 0 && !_warnShown) {
+    doAutoLogout();
+    return;
   }
   // 2분 전 → 연장 팝업. 팝업 뜨는 순간부터 정확히 WARN_BEFORE(2분) 카운트다운을 새로 부여.
   if (remain <= WARN_BEFORE && !_warnShown) {
