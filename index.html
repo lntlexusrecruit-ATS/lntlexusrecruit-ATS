@@ -329,6 +329,10 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
         <button class="lp-nav-link" style="background:var(--accent);color:#fff;border-radius:8px;white-space:nowrap;" onclick="showMyApplications()">내 지원 현황</button>
         <button class="lp-nav-link" style="white-space:nowrap;" onclick="logout()">로그아웃</button>
       </span>
+      <!-- 비로그인: 이미 지원한 사람이 현황 확인용으로 로그인 -->
+      <span id="lpNavGuest" style="display:none;align-items:center;margin-left:14px;padding-left:14px;border-left:1px solid var(--border);">
+        <button class="lp-nav-link" style="background:var(--accent);color:#fff;border-radius:8px;white-space:nowrap;" onclick="openLoginOnly()">로그인 · 내 지원 현황</button>
+      </span>
     </div>
   </nav>
 
@@ -444,8 +448,8 @@ body { font-family:'Pretendard',-apple-system,sans-serif; background:var(--bg); 
     <div class="auth-wrap">
       <div class="auth-card">
         <button onclick="goBackToJobs()" style="display:flex;align-items:center;gap:6px;font-family:'Pretendard',sans-serif;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;margin-bottom:16px;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">← 공고 목록으로</button>
-        <div class="auth-title">지원 시작하기</div>
-        <div class="auth-subtitle">계정을 만들거나 로그인하여 지원서를 작성하세요</div>
+        <div class="auth-title" id="authTitle">지원 시작하기</div>
+        <div class="auth-subtitle" id="authSubtitle">계정을 만들거나 로그인하여 지원서를 작성하세요</div>
         <div class="auth-tabs">
           <div class="auth-tab" onclick="switchAuth('signup',this)">회원가입</div>
           <div class="auth-tab active" onclick="switchAuth('login',this)">로그인</div>
@@ -823,6 +827,7 @@ function applyToJob(id, title, dept, type) {
     hideAllViews();
     document.getElementById('mainHeader').style.display = '';
     document.getElementById('jobBadge').textContent = title;
+    _setAuthTexts('지원 시작하기', '계정을 만들거나 로그인하여 지원서를 작성하세요');
     document.getElementById('viewAuth').classList.remove('hidden');
     if (!window._lpSuppressHistory) history.pushState({ view: 'auth', id }, '', '#apply-' + id);
   }
@@ -967,6 +972,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       startIdleTimer();
     }
   }
+  // 비로그인 상태: 상단에 "로그인 · 내 지원 현황" 버튼 표시
+  updateFloatingLogout();
 
   // Auth 상태 변화 감지
   sb.auth.onAuthStateChange((event, session) => {
@@ -977,6 +984,25 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ── 인증 ─────────────────────────────────────────────────
+// 랜딩 상단 "로그인 · 내 지원 현황": 공고 선택 없이 로그인 → 내 지원 현황으로 이동
+function openLoginOnly() {
+  jobPostingId = null; jobTitle = ''; applicationId = null;
+  window.scrollTo({ top: 0 });
+  hideAllViews();
+  document.getElementById('mainHeader').style.display = '';
+  document.getElementById('jobBadge').textContent = '로그인';
+  _setAuthTexts('로그인', '로그인하면 지원 현황을 확인하거나 지원서를 이어서 작성할 수 있습니다');
+  document.getElementById('viewAuth').classList.remove('hidden');
+  const loginTab = [...document.querySelectorAll('.auth-tab')].find(t => t.textContent.trim() === '로그인');
+  if (loginTab) switchAuth('login', loginTab);
+  updateFloatingLogout();
+}
+function _setAuthTexts(title, sub) {
+  const t = document.getElementById('authTitle'), st = document.getElementById('authSubtitle');
+  if (t) t.textContent = title;
+  if (st) st.textContent = sub;
+}
+
 function switchAuth(mode, el) {
   document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
@@ -1296,6 +1322,8 @@ function updateFloatingLogout() {
   // 랜딩 내비 안의 로그인 영역: 로그인 상태 + 랜딩 화면일 때만
   const navAuth = document.getElementById('lpNavAuth');
   if (navAuth) navAuth.style.display = (currentUser && landingVisible) ? 'inline-flex' : 'none';
+  const navGuest = document.getElementById('lpNavGuest');
+  if (navGuest) navGuest.style.display = (!currentUser && landingVisible) ? 'inline-flex' : 'none';
   // 플로팅 버튼은 사용하지 않음(지원서=자체 헤더, 랜딩=내비, 현황=내비가 각각 로그아웃 보유)
   const el = document.getElementById('floatingLogout');
   if (el) el.style.display = 'none';
