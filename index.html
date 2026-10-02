@@ -1674,11 +1674,18 @@ async function submitApplication() {
   }
   if(!error) { applicationId = appId; await saveSubtables(); }
   if(!error) {
-    const now = new Date().toISOString();
-    const r = await sb.from('applications')
-      .update({ is_draft:false, submission_number:submissionNumber, submitted_at:now, updated_at:now })
-      .eq('id', appId);
-    error = r.error;
+    // 제출 전환은 서버 함수로 처리 (제출 후 지원자 조회 차단 정책과 충돌하지 않도록)
+    const r = await sb.rpc('submit_my_application', { p_id: appId, p_submission_number: submissionNumber });
+    if (r.error) {
+      // 서버 함수가 아직 없으면 기존 방식으로 시도 (배포 순서 안전장치)
+      const now = new Date().toISOString();
+      const r2 = await sb.from('applications')
+        .update({ is_draft:false, submission_number:submissionNumber, submitted_at:now, updated_at:now })
+        .eq('id', appId);
+      error = r2.error;
+    } else if (r.data !== true) {
+      error = { message: '제출 처리에 실패했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.' };
+    }
   }
   hideLoading();
   if(error){showToast('⚠️ 제출 실패: '+error.message);return;}
