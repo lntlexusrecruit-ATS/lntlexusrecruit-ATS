@@ -1003,7 +1003,7 @@ function safeUrl(u) {
     <div class="field"><label>직무 설명</label><textarea id="jDesc" rows="3" placeholder="담당 업무를 입력하세요"></textarea></div>
     <div class="field"><label>자격 요건</label><textarea id="jReq" rows="3" placeholder="필요한 역량/경험을 입력하세요"></textarea></div>
     <div class="field" id="jReviewersWrap" style="display:none">
-      <label style="font-size:13px;font-weight:600">서류검토 담당자 지정 <span style="font-size:11px;font-weight:400;color:var(--text3)">(영업직 전용 · 검토 단계 합격/불합격 처리 권한)</span></label>
+      <label style="font-size:13px;font-weight:600">서류검토 담당자 지정 <span style="font-size:11px;font-weight:400;color:var(--text3)">(모든 직군 · 검토 단계 합격/불합격 처리 권한 · 면접관과 별도)</span></label>
       <div style="font-size:11px;color:var(--text3);margin-top:4px">면접관은 여기에 체크하지 않아도 이 공고와 지원자를 볼 수 있습니다. 서류검토를 하는 사람만 체크하세요.</div>
       <div id="jReviewers" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:200px;overflow-y:auto"></div>
     </div>
@@ -1789,14 +1789,14 @@ function renderJobs() {
   c.innerHTML = allJobs.map(j => {
     const iv1 = iv1All.filter(i => i.job_id === j.id).map(i => i.admin_profiles?.name).filter(Boolean);
     const iv2 = iv2All.filter(i => i.job_id === j.id).map(i => i.admin_profiles?.name).filter(Boolean);
-    // 서류검토 담당자 배지는 영업직 공고에만 (다른 직군은 면접관이 검토도 겸함)
-    const rv = j.job_category === '영업' ? rvAll.filter(r => r.job_posting_id === j.id).map(r => r.admin_profiles?.name).filter(Boolean) : [];
+    // 서류검토 담당자 배지 (모든 직군)
+    const rv = rvAll.filter(r => r.job_posting_id === j.id).map(r => r.admin_profiles?.name).filter(Boolean);
     const ivHtml = (iv1.length || iv2.length || rv.length) ? `
       <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
         ${rv.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:11px;font-weight:600;color:#7A3D00;background:#FEF3E2;padding:2px 8px;border-radius:20px;white-space:nowrap">서류검토</span>
           ${rv.map(n => `<span style="font-size:12px;color:var(--text2)">${esc(n)}</span>`).join('<span style="color:var(--border)">·</span>')}
-        </div>` : (j.job_category === '영업' ? `<span style="font-size:11px;color:#A32D2D">⚠ 서류검토 담당자 미지정</span>` : '')}
+        </div>` : `<span style="font-size:11px;color:#A32D2D">⚠ 서류검토 담당자 미지정</span>`}
         ${iv1.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:11px;font-weight:600;color:#3C3489;background:#EEEDFE;padding:2px 8px;border-radius:20px;white-space:nowrap">1차면접관</span>
           ${iv1.map(n => `<span style="font-size:12px;color:var(--text2)">${esc(n)}</span>`).join('<span style="color:var(--border)">·</span>')}
@@ -1881,7 +1881,7 @@ async function openJobForm(jobId = null) {
         </label>`).join('')
       : '<div style="font-size:12px;color:var(--text3);padding:8px">등록된 관리자가 없습니다</div>';
   };
-  // 서류검토 담당자 (영업직 전용) — 현재 공고 접근 권한(admin_job_permissions) 보유자가 기본 체크
+  // 서류검토 담당자 (모든 직군) — 현재 공고 접근 권한(admin_job_permissions) 보유자가 기본 체크
   makeIvCheckbox(document.getElementById('jReviewers'), assignedManagerIds, 'jReviewer');
   toggleReviewerField();
   // 기존 1차/2차 면접관 로드
@@ -1899,16 +1899,18 @@ async function openJobForm(jobId = null) {
   document.getElementById('jobFormModal').classList.remove('hidden');
 }
 function closeJobForm() { document.getElementById('jobFormModal').classList.add('hidden'); editJobId = null; }
-// 직군이 '영업'일 때만 서류검토 담당자 영역 표시
+// 서류검토 담당자 영역: 모든 직군에 표시
 function toggleReviewerField() {
   const wrap = document.getElementById('jReviewersWrap');
   if (!wrap) return;
-  wrap.style.display = document.getElementById('jCategory').value === '영업' ? '' : 'none';
+  wrap.style.display = '';
 }
 
 async function saveJob() {
   const title = document.getElementById('jTitle').value.trim();
   if (!title) { showToast('공고 제목을 입력하세요'); return; }
+  if (!document.querySelectorAll('#jReviewers input[name="jReviewer"]:checked').length &&
+      !confirm('서류검토 담당자가 지정되지 않았습니다.\n이 경우 슈퍼어드민만 서류 합격·불합격을 처리할 수 있습니다.\n\n그대로 저장할까요?')) return;
   const payload = { title, department: document.getElementById('jDept').value, location: document.getElementById('jLocation').value, employment_type: document.getElementById('jType').value, is_active: document.getElementById('jActive').value === 'true', description: document.getElementById('jDesc').value, requirements: document.getElementById('jReq').value, interview_location_1st: document.getElementById('jIvLoc1').value.trim(), interview_location_2nd: document.getElementById('jIvLoc2').value.trim(), job_category: document.getElementById('jCategory').value || null, updated_at: new Date().toISOString() };
   let jobId = editJobId;
   if (editJobId) {
@@ -1920,12 +1922,6 @@ async function saveJob() {
     jobId = data.id;
   }
   const _wasEdit = !!editJobId;
-  // 저장 전 기존 면접관 (영업 외 직군: 면접관에서 빠진 사람의 서류검토 권한 회수용)
-  const [{ data: _old1 }, { data: _old2 }] = await Promise.all([
-    sb.from('job_interviewers').select('admin_id').eq('job_id', jobId),
-    sb.from('job_interviewers_2nd').select('admin_id').eq('job_id', jobId)
-  ]);
-  const _oldIvIds = [...new Set([...(_old1||[]), ...(_old2||[])].map(r => r.admin_id))];
   // 1차 면접관 저장
   const checkedInterviewers = Array.from(document.querySelectorAll('#jInterviewers input[name="jInterviewer"]:checked')).map(c => c.value);
   await sb.from('job_interviewers').delete().eq('job_id', jobId);
@@ -1939,24 +1935,13 @@ async function saveJob() {
     await sb.from('job_interviewers_2nd').insert(checkedInterviewers2nd.map(aid => ({ job_id: jobId, admin_id: aid })));
   }
   // 공고 접근 권한(admin_job_permissions) = 서류검토 권한 동기화
-  //  · 영업직: '서류검토 담당자'에 체크한 사람만 (면접관은 자동 부여 안 함)
-  //  · 그 외 직군: 기존처럼 면접관도 서류검토 가능 → 1차/2차 면접관에게 권한 자동 추가 (기존 권한은 유지)
+  //  · 모든 직군: '서류검토 담당자'에 체크한 사람만 (면접관이라고 자동 부여하지 않음)
   try {
-    const isSales = payload.job_category === '영업';
     const { data: curPerms } = await sb.from('admin_job_permissions').select('admin_id').eq('job_posting_id', jobId);
     const curIds = (curPerms||[]).map(p => p.admin_id);
-    let wantIds;
-    if (isSales) {
-      wantIds = Array.from(document.querySelectorAll('#jReviewers input[name="jReviewer"]:checked')).map(c => c.value);
-      const toDel = curIds.filter(id => !wantIds.includes(id));
-      if (toDel.length) await sb.from('admin_job_permissions').delete().eq('job_posting_id', jobId).in('admin_id', toDel);
-    } else {
-      const _newIv = new Set([...checkedInterviewers, ...checkedInterviewers2nd]);
-      const _removedIv = _oldIvIds.filter(id => !_newIv.has(id));
-      const toDel = curIds.filter(id => _removedIv.includes(id));
-      if (toDel.length) await sb.from('admin_job_permissions').delete().eq('job_posting_id', jobId).in('admin_id', toDel);
-      wantIds = [...new Set([...curIds.filter(id => !toDel.includes(id)), ..._newIv])];
-    }
+    const wantIds = Array.from(document.querySelectorAll('#jReviewers input[name="jReviewer"]:checked')).map(c => c.value);
+    const toDel = curIds.filter(id => !wantIds.includes(id));
+    if (toDel.length) await sb.from('admin_job_permissions').delete().eq('job_posting_id', jobId).in('admin_id', toDel);
     // 슈퍼어드민도 서류검토 담당자로 지정 가능 (표시·알림 대상에 포함)
     const toAdd = wantIds.filter(id => !curIds.includes(id));
     if (toAdd.length) await sb.from('admin_job_permissions').insert(toAdd.map(aid => ({ admin_id: aid, job_posting_id: jobId, granted_by: currentAdmin.id })));
