@@ -5593,6 +5593,7 @@ let _schedJobLoc = { 1:'', 2:'' }; // 공고에 설정된 1차/2차 면접 장�
 function _schedDefaultLoc() { return (_schedJobLoc && _schedJobLoc[_schedRound]) || ''; }
 
 async function openSchedulePanel(id, app, isDispatch) {
+  window._ivViewerClosedByUser = false;
   _schedAppId = id;
   _schedIsDispatch = isDispatch;
   _schedRound = app.stage === '2차면접' ? 2 : 1;
@@ -5892,10 +5893,12 @@ ${esc(selectedSlot.available_dates || '-')}</div>
   const _ivInputCnt = new Set(_schedAvailability.map(a => a.admin_id)).size;
   const viewerBtn = (allInterviewers.length || _schedAvailability.length) ? `
     <button class="btn btn-sm" style="width:100%;margin-bottom:14px;padding:9px;font-size:12px;font-weight:600;background:#EEEDFE;color:#3C3489;border:1px solid #D6D3F5" onclick="openIvAvailViewer()">
-      👥 면접관 가능시간 달력 보기 <span style="font-weight:400;color:#6B64B8">(${_ivInputCnt}/${Math.max(allInterviewers.length, _ivInputCnt)}명 입력)</span>
+      👥 면접관 가능시간 달력 ${window._ivViewerClosedByUser ? '다시 보기' : '숨기기/보기'} <span style="font-weight:400;color:#6B64B8">(${_ivInputCnt}/${Math.max(allInterviewers.length, _ivInputCnt)}명 입력)</span>
     </button>` : '';
   body.innerHTML = viewerBtn + finalSection + linkSection + confirmedSection + overlapSection + addSlotSection + myAvailSection;
+  // 면접관 가능시간 창: 일정 패널 왼쪽에 자동으로 표시 (사용자가 ✕로 닫으면 이 지원자 패널에서는 다시 안 띄움)
   if (document.getElementById('ivAvailViewer')) renderIvAvailViewer();
+  else if (!window._ivViewerClosedByUser && (allInterviewers.length || _schedAvailability.length)) openIvAvailViewer();
   if (!body.innerHTML.trim()) body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px">면접 일정 패널<br>날짜/시간을 추가하세요</div>';
   startSchedLinkCountdown();
 }
@@ -6046,8 +6049,25 @@ function _ivName(id) {
   return iv?.admin_profiles?.name || _schedAvailability.find(a => a.admin_id === id)?.admin_profiles?.name || '-';
 }
 const _hm = t => (t || '').slice(0, 5);
+function _ivResetView() {
+  const _t = new Date();
+  const todayStr = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
+  const future = _schedAvailability.map(a => a.slot_date).filter(d => d >= todayStr).sort();
+  const base = future[0] ? new Date(future[0] + 'T00:00:00') : _t;
+  _ivViewYear = base.getFullYear(); _ivViewMonth = base.getMonth(); _ivViewDate = future[0] || null;
+  window._ivViewKey = _schedAppId + '_' + _schedRound;
+}
+function _ivPlace(el) {
+  // 일정 패널 바로 왼쪽에 붙여서 표시 (공간 없으면 오른쪽)
+  const sp = document.getElementById('schedulePanel').getBoundingClientRect();
+  const W = 320;
+  const left = sp.left - W >= 0 ? sp.left - W : Math.min(sp.right, window.innerWidth - W);
+  el.style.cssText = `position:fixed;top:${sp.top}px;left:${left}px;width:${W}px;height:${sp.height}px;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);border-left:1px solid var(--border);box-shadow:-6px 0 20px rgba(0,0,0,.08);z-index:260;padding:16px;box-sizing:border-box`;
+}
+window.addEventListener('resize', () => { const el = document.getElementById('ivAvailViewer'); if (el) _ivPlace(el); });
 function openIvAvailViewer() {
-  if (document.getElementById('ivAvailViewer')) { closeIvAvailViewer(); return; }
+  if (document.getElementById('ivAvailViewer')) { closeIvAvailViewer(true); return; }
+  window._ivViewerClosedByUser = false;
   const _t = new Date();
   const todayStr = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
   const future = _schedAvailability.map(a => a.slot_date).filter(d => d >= todayStr).sort();
@@ -6055,12 +6075,16 @@ function openIvAvailViewer() {
   _ivViewYear = base.getFullYear(); _ivViewMonth = base.getMonth(); _ivViewDate = future[0] || null;
   const el = document.createElement('div');
   el.id = 'ivAvailViewer';
-  const sp = document.getElementById('schedulePanel').getBoundingClientRect();
-  el.style.cssText = `position:fixed;top:${Math.max(12, sp.top + 12)}px;left:${Math.min(sp.right + 8, window.innerWidth - 316)}px;width:300px;max-height:calc(100vh - 40px);overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 10px 30px rgba(0,0,0,.15);z-index:260;padding:14px`;
+  _ivPlace(el);
+  el.style.animation = 'slideInLeft .2s ease';
   document.body.appendChild(el);
+  window._ivViewKey = _schedAppId + '_' + _schedRound;
   renderIvAvailViewer();
 }
-function closeIvAvailViewer() { document.getElementById('ivAvailViewer')?.remove(); }
+function closeIvAvailViewer(byUser) {
+  document.getElementById('ivAvailViewer')?.remove();
+  if (byUser) { window._ivViewerClosedByUser = true; if (document.getElementById('schedulePanel')?.style.display !== 'none') loadSchedulePanel(); }
+}
 function ivViewMonth(dir) {
   _ivViewMonth += dir;
   if (_ivViewMonth > 11) { _ivViewMonth = 0; _ivViewYear++; }
@@ -6070,6 +6094,8 @@ function ivViewMonth(dir) {
 function ivViewPick(d) { _ivViewDate = d; renderIvAvailViewer(); }
 function renderIvAvailViewer() {
   const el = document.getElementById('ivAvailViewer'); if (!el) return;
+  if (window._ivViewKey !== _schedAppId + '_' + _schedRound) _ivResetView();
+  _ivPlace(el);
   const colors = _ivColorMap();
   const byDate = {};
   _schedAvailability.forEach(a => { (byDate[a.slot_date] = byDate[a.slot_date] || []).push(a); });
@@ -6092,7 +6118,7 @@ function renderIvAvailViewer() {
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
       <div style="font-size:13px;font-weight:700">👥 면접관 가능시간 <span style="font-size:11px;font-weight:500;color:var(--text3)">${_schedRound}차</span></div>
-      <button class="modal-close" onclick="closeIvAvailViewer()" style="font-size:14px">✕</button>
+      <button class="modal-close" onclick="closeIvAvailViewer(true)" style="font-size:14px" title="닫기">✕</button>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-bottom:8px">
       ${ivIds.map(id => {
