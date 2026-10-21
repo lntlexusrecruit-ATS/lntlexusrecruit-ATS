@@ -5872,6 +5872,17 @@ ${esc(selectedSlot.available_dates || '-')}</div>
     const _sentAt = _exp ? new Date(_exp.getTime() - 2 * 60 * 60 * 1000) : null;
     const _fmt = d => d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     window._schedLinkExpiresAt = _expired ? null : _exp; // 남은 시간 카운트다운용 (이미 만료면 카운트다운 안 함 → 무한 새로고침 방지)
+    // 이 링크로 카톡 알림톡이 몇 번 나갔는지 (성공 건만 감사로그에 남음 · 링크당 최대 ALIMTALK_MAX_PER_LINK회)
+    let _ktCount = null;
+    if (_sentAt) {
+      try {
+        const { count } = await sb.from('audit_logs').select('id', { count: 'exact', head: true })
+          .eq('target_id', String(_schedAppId)).like('action', '알림톡%')
+          .gte('created_at', _sentAt.toISOString());
+        _ktCount = count ?? 0;
+      } catch(e) { _ktCount = null; }
+    }
+    const _ktLeft = _ktCount == null ? null : Math.max(0, ALIMTALK_MAX_PER_LINK - _ktCount);
     linkSection = `
     <div style="padding:12px 14px;background:${_expired ? '#FCEBEB' : 'var(--surface2)'};border:1px dashed ${_expired ? '#E0A0A0' : 'var(--border2)'};border-radius:var(--rsm);margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
@@ -5881,13 +5892,17 @@ ${esc(selectedSlot.available_dates || '-')}</div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text2);margin-bottom:8px">
         <span>📤 발송: <b>${_sentAt ? _fmt(_sentAt) : '-'}</b></span>
         <span>⏳ 만료: <b>${_exp ? _fmt(_exp) : '-'}</b></span>
+        ${_ktCount != null ? `<span>📱 카톡 발송: <b>${_ktCount}회</b> / 최대 ${ALIMTALK_MAX_PER_LINK}회</span>` : ''}
       </div>
       <div style="font-size:11px;word-break:break-all;color:#534AB7;cursor:pointer" title="클릭하면 복사됩니다" onclick="navigator.clipboard.writeText('${_selUrl}');showToast('✓ 링크 복사됨')">${_selUrl}</div>
       <div style="font-size:10px;color:var(--text3);margin-top:4px">클릭하면 복사됩니다</div>
       ${_expired ? `
       <div style="font-size:11px;color:#A32D2D;margin-top:8px">시간 내 응답이 없었습니다. 재발송하면 새 링크(2시간)가 만들어지고 이전 링크는 무효화됩니다.</div>
       <button class="btn btn-primary btn-sm" style="width:100%;margin-top:8px;padding:10px" onclick="resendScheduleLink()">🔁 재발송 (새 링크 생성)</button>` : `
-      <button class="btn btn-sm" style="width:100%;margin-top:8px;padding:8px" onclick="resendScheduleLink()">🔁 재발송 (새 링크 생성 · 이전 링크 무효화)</button>`}
+      ${_ktLeft === 0
+        ? `<button class="btn btn-sm" disabled style="width:100%;margin-top:8px;padding:8px;opacity:.45;cursor:not-allowed">📱 카톡 재발송 한도 도달 (링크당 ${ALIMTALK_MAX_PER_LINK}회) — 링크를 직접 전달해 주세요</button>`
+        : `<button class="btn btn-primary btn-sm" id="btnResendAlimtalk" style="width:100%;margin-top:8px;padding:9px" onclick="resendAlimtalk('${selectedSlot.token}')">📱 카톡 재발송 (같은 링크 · 남은 시간 그대로)${_ktLeft != null ? ` · ${_ktLeft}회 남음` : ''}</button>`}
+      <button class="btn btn-sm" style="width:100%;margin-top:6px;padding:8px" onclick="resendScheduleLink()">🔁 새 링크로 재발송 (2시간 새로 시작 · 이전 링크 무효화)</button>`}
     </div>`;
   }
 
@@ -5929,6 +5944,26 @@ function startSchedLinkCountdown() {
   };
   tick();
   _schedLinkTimer = setInterval(tick, 1000);
+}
+
+// 같은 링크로 카톡 알림톡만 다시 발송 (토큰·만료시각 변경 없음)
+// 용도: 첫 발송 실패, 지원자가 "카톡 못 받았다"고 할 때
+const ALIMTALK_MAX_PER_LINK = 3; // 서버(send-alimtalk v3)와 동일하게 유지
+let _alimtalkResending = false;
+async function resendAlimtalk(token) {
+  if (_alimtalkResending || !token) return;
+  if (!confirm('지원자에게 같은 선택 링크를 카카오 알림톡으로 다시 보낼까요?\n링크와 남은 시간은 그대로 유지됩니다.')) return;
+  _alimtalkResending = true;
+  const btn = document.getElementById('btnResendAlimtalk');
+  if (btn) { btn.disabled = true; btn.textContent = '📨 카톡 재발송 중...'; }
+  try {
+    const r = await sendAlimtalk(token, true);
+    showToast(r.msg.replace(' — 아래 링크를 직접 전달해 주세요', ' — 링크를 직접 전달해 주세요'));
+    if (!r.ok) alert(r.msg.replace('아래 링크', '패널의 링크'));
+  } finally {
+    _alimtalkResending = false;
+    await loadSchedulePanel(); // 발송 횟수 갱신
+  }
 }
 
 // 재발송: 확인 후 sendScheduleEmail() 재호출 (새 토큰·새 만료시각으로 갱신)
@@ -6453,7 +6488,7 @@ async function sendScheduleEmail() {
 }
 
 // 카카오 알림톡 발송 (Edge Function send-alimtalk)
-async function sendAlimtalk(token) {
+async function sendAlimtalk(token, resend = false) {
   // 알림톡은 슈퍼어드민만 발송 (서버에서도 동일하게 차단)
   if (adminProfile?.role !== 'superadmin') {
     return { ok: false, msg: 'ℹ️ 알림톡은 슈퍼어드민만 발송할 수 있습니다 — 아래 링크를 직접 전달해 주세요' };
@@ -6464,12 +6499,13 @@ async function sendAlimtalk(token) {
     const res = await fetch(SUPABASE_URL + '/functions/v1/send-alimtalk', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + SUPABASE_KEY, 'apikey': SUPABASE_KEY, 'x-caller-token': callerToken },
-      body: JSON.stringify({ selectionToken: token })
+      body: JSON.stringify({ selectionToken: token, resend: !!resend })
     });
     let out = {};
     try { out = await res.json(); } catch(e) {}
-    if (res.ok && out.ok) return { ok: true, msg: `✅ 카카오 알림톡 발송 완료 (${out.to || '지원자'})` };
+    if (res.ok && out.ok) return { ok: true, msg: `✅ 카카오 알림톡 ${resend ? '재발송' : '발송'} 완료 (${out.to || '지원자'})` };
     if (out.code === 'not_configured') return { ok: false, msg: '⚠️ 알림톡 미설정 — 아래 링크를 직접 전달해 주세요' };
+    if (out.code === 'limit') return { ok: false, msg: `⛔ ${out.error} — 아래 링크를 직접 전달해 주세요` };
     return { ok: false, msg: `⚠️ 알림톡 발송 실패: ${out.error || ('오류 ' + res.status)} — 아래 링크를 직접 전달해 주세요` };
   } catch (e) {
     return { ok: false, msg: '⚠️ 알림톡 발송 실패(네트워크) — 아래 링크를 직접 전달해 주세요' };
