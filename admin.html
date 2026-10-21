@@ -2789,6 +2789,7 @@ function closeModal() {
 }
 function closeSchedulePanel() {
   document.getElementById('schedulePanel').style.display = 'none';
+  closeIvAvailViewer();
   if (_schedLinkTimer) { clearInterval(_schedLinkTimer); _schedLinkTimer = null; }
   window._schedLinkExpiresAt = null;
 }
@@ -5886,7 +5887,15 @@ ${esc(selectedSlot.available_dates || '-')}</div>
     </div>`;
   }
 
-  body.innerHTML = finalSection + linkSection + confirmedSection + overlapSection + addSlotSection + myAvailSection;
+  // 면접관 가능시간 달력 보기 버튼 (모든 면접관·슈퍼어드민)
+  window._schedIvList = allInterviewers;
+  const _ivInputCnt = new Set(_schedAvailability.map(a => a.admin_id)).size;
+  const viewerBtn = (allInterviewers.length || _schedAvailability.length) ? `
+    <button class="btn btn-sm" style="width:100%;margin-bottom:14px;padding:9px;font-size:12px;font-weight:600;background:#EEEDFE;color:#3C3489;border:1px solid #D6D3F5" onclick="openIvAvailViewer()">
+      👥 면접관 가능시간 달력 보기 <span style="font-weight:400;color:#6B64B8">(${_ivInputCnt}/${Math.max(allInterviewers.length, _ivInputCnt)}명 입력)</span>
+    </button>` : '';
+  body.innerHTML = viewerBtn + finalSection + linkSection + confirmedSection + overlapSection + addSlotSection + myAvailSection;
+  if (document.getElementById('ivAvailViewer')) renderIvAvailViewer();
   if (!body.innerHTML.trim()) body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px">면접 일정 패널<br>날짜/시간을 추가하세요</div>';
   startSchedLinkCountdown();
 }
@@ -6023,6 +6032,91 @@ function buildOverlapSection(allInterviewers) {
       </div>`;
     }).join('')}
   </div>`;
+}
+
+// ── 면접관 가능시간 달력 뷰어 (일정 패널 옆 작은 창) ─────────────
+let _ivViewYear = null, _ivViewMonth = null, _ivViewDate = null;
+const IV_COLORS = ['#534AB7','#D9822B','#2E8B57','#C2416B','#1F7FBF','#8A6D1F','#6B7280'];
+function _ivColorMap() {
+  const ids = [...new Set([...(window._schedIvList || []).map(i => i.admin_id), ..._schedAvailability.map(a => a.admin_id)])];
+  const m = {}; ids.forEach((id, i) => { m[id] = IV_COLORS[i % IV_COLORS.length]; }); return m;
+}
+function _ivName(id) {
+  const iv = (window._schedIvList || []).find(i => i.admin_id === id);
+  return iv?.admin_profiles?.name || _schedAvailability.find(a => a.admin_id === id)?.admin_profiles?.name || '-';
+}
+const _hm = t => (t || '').slice(0, 5);
+function openIvAvailViewer() {
+  if (document.getElementById('ivAvailViewer')) { closeIvAvailViewer(); return; }
+  const _t = new Date();
+  const todayStr = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
+  const future = _schedAvailability.map(a => a.slot_date).filter(d => d >= todayStr).sort();
+  const base = future[0] ? new Date(future[0] + 'T00:00:00') : _t;
+  _ivViewYear = base.getFullYear(); _ivViewMonth = base.getMonth(); _ivViewDate = future[0] || null;
+  const el = document.createElement('div');
+  el.id = 'ivAvailViewer';
+  const sp = document.getElementById('schedulePanel').getBoundingClientRect();
+  el.style.cssText = `position:fixed;top:${Math.max(12, sp.top + 12)}px;left:${Math.min(sp.right + 8, window.innerWidth - 316)}px;width:300px;max-height:calc(100vh - 40px);overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 10px 30px rgba(0,0,0,.15);z-index:260;padding:14px`;
+  document.body.appendChild(el);
+  renderIvAvailViewer();
+}
+function closeIvAvailViewer() { document.getElementById('ivAvailViewer')?.remove(); }
+function ivViewMonth(dir) {
+  _ivViewMonth += dir;
+  if (_ivViewMonth > 11) { _ivViewMonth = 0; _ivViewYear++; }
+  if (_ivViewMonth < 0) { _ivViewMonth = 11; _ivViewYear--; }
+  renderIvAvailViewer();
+}
+function ivViewPick(d) { _ivViewDate = d; renderIvAvailViewer(); }
+function renderIvAvailViewer() {
+  const el = document.getElementById('ivAvailViewer'); if (!el) return;
+  const colors = _ivColorMap();
+  const byDate = {};
+  _schedAvailability.forEach(a => { (byDate[a.slot_date] = byDate[a.slot_date] || []).push(a); });
+  const y = _ivViewYear, m = _ivViewMonth;
+  const first = new Date(y, m, 1).getDay(), dim = new Date(y, m + 1, 0).getDate();
+  let cells = '';
+  for (let i = 0; i < first; i++) cells += '<div></div>';
+  for (let d = 1; d <= dim; d++) {
+    const ds = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const list = byDate[ds] || [];
+    const who = [...new Set(list.map(a => a.admin_id))];
+    const sel = ds === _ivViewDate;
+    cells += `<div ${list.length ? `onclick="ivViewPick('${ds}')"` : ''} style="height:34px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;${list.length ? 'cursor:pointer;' : 'color:var(--text3);'}${sel ? 'background:#EEEDFE;outline:1.5px solid #534AB7;' : (list.length ? 'background:var(--surface2);' : '')}">
+      <span style="${list.length ? 'font-weight:700;color:#1a1a1a' : ''}">${d}</span>
+      <span style="display:flex;gap:2px;height:5px">${who.slice(0, 5).map(id => `<i style="width:5px;height:5px;border-radius:50%;background:${colors[id]}"></i>`).join('')}</span>
+    </div>`;
+  }
+  const dayList = (byDate[_ivViewDate] || []).slice().sort((a, b) => (a.slot_time || '').localeCompare(b.slot_time || ''));
+  const ivIds = Object.keys(colors);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:700">👥 면접관 가능시간 <span style="font-size:11px;font-weight:500;color:var(--text3)">${_schedRound}차</span></div>
+      <button class="modal-close" onclick="closeIvAvailViewer()" style="font-size:14px">✕</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-bottom:8px">
+      ${ivIds.map(id => {
+        const n = _schedAvailability.filter(a => a.admin_id === id).length;
+        return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:${n ? '#333' : 'var(--text3)'}"><i style="width:8px;height:8px;border-radius:50%;background:${colors[id]}"></i>${esc(_ivName(id))}${n ? '' : ' (미입력)'}</span>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <button class="btn btn-sm" style="padding:2px 8px" onclick="ivViewMonth(-1)">‹</button>
+      <span style="font-size:12px;font-weight:600">${y}년 ${m+1}월</span>
+      <button class="btn btn-sm" style="padding:2px 8px" onclick="ivViewMonth(1)">›</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:10px;color:var(--text3);text-align:center;margin-bottom:2px">${['일','월','화','수','목','금','토'].map(x => `<div>${x}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">${cells}</div>
+    <div style="margin-top:10px;border-top:0.5px solid var(--border);padding-top:8px">
+      ${_ivViewDate ? `<div style="font-size:12px;font-weight:700;color:#534AB7;margin-bottom:6px">${formatSlotDate(_ivViewDate)}</div>` : ''}
+      ${dayList.length ? dayList.map(a => `
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 0">
+          <i style="width:8px;height:8px;border-radius:50%;background:${colors[a.admin_id]};flex-shrink:0"></i>
+          <span style="font-weight:600;min-width:48px">${esc(_ivName(a.admin_id))}</span>
+          <span>${_hm(a.slot_time)}${a.slot_time_end ? '~' + _hm(a.slot_time_end) : ''}</span>
+          ${a.location ? `<span style="color:#B25C00;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">· ${esc(a.location)}</span>` : ''}
+        </div>`).join('') : `<div style="font-size:11px;color:var(--text3);text-align:center;padding:6px">${_schedAvailability.length ? '점이 있는 날짜를 누르면 시간이 보입니다' : '아직 입력된 가능시간이 없습니다'}</div>`}
+    </div>`;
 }
 
 function renderMiniCalendar() {
