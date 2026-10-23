@@ -353,6 +353,8 @@ body{font-family:'Pretendard',-apple-system,sans-serif;background:var(--bg);colo
 .note-badge.pub{background:#EEEDFE;color:#3C3489}
 .note-badge.priv{background:#EDEDEA;color:#5F5E5A}
 .note-toggle{font-size:11px;color:#534AB7;background:none;border:none;cursor:pointer;padding:0;margin-top:6px;text-decoration:underline}
+.note-actions{display:flex;gap:12px;flex-wrap:wrap}
+.note-edit-area{font-family:'Pretendard',sans-serif;font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--accent);border-radius:var(--rxs);padding:8px 10px;outline:none;width:100%;resize:vertical;line-height:1.6;margin-top:2px}
 .note-compose-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .note-public-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none}
 .note-public-chk input{width:15px;height:15px;accent-color:#534AB7;cursor:pointer}
@@ -2789,6 +2791,8 @@ async function openModal(id) {
 async function loadNotes(id) {
   // RLS가 "내 메모 + 전체공개 메모"만 돌려줌
   const {data:notes}=await sb.from('admin_notes').select('*').eq('application_id',id).order('created_at',{ascending:false});
+  _notesById = {};
+  (notes||[]).forEach(n => { _notesById[n.id] = n; });
   document.getElementById('mNotesList').innerHTML=(notes||[]).length?(notes||[]).map(n=>{
     const mine = n.author_id && n.author_id === currentAdmin?.id;
     const pub = n.is_public !== false;
@@ -2797,11 +2801,49 @@ async function loadNotes(id) {
         <div class="note-author">${esc(n.author_name)}${mine ? ' <span style="font-size:11px;color:var(--text3);font-weight:400">(나)</span>' : ''}</div>
         <span class="note-badge ${pub ? 'pub' : 'priv'}">${pub ? '👥 전체공개' : '🔒 나만 보기'}</span>
       </div>
-      <div class="note-text" style="white-space:pre-wrap">${esc(n.content)}</div>
-      <div class="note-date">${new Date(n.created_at).toLocaleDateString('ko-KR',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
-      ${mine ? `<button class="note-toggle" onclick="toggleNotePublic('${n.id}', ${pub ? 'false' : 'true'})">${pub ? '🔒 나만 보기로 바꾸기' : '👥 전체공개로 바꾸기'}</button>` : ''}
+      <div class="note-text" id="noteText-${n.id}" style="white-space:pre-wrap">${esc(n.content)}</div>
+      <div class="note-date">${_fmtNoteDate(n.created_at)}${n.updated_at && new Date(n.updated_at) - new Date(n.created_at) > 1000 ? ` · ✏️ 수정됨 ${_fmtNoteDate(n.updated_at)}` : ''}</div>
+      ${mine ? `<div class="note-actions" id="noteActions-${n.id}">
+        <button class="note-toggle" onclick="startEditNote('${n.id}')">✏️ 수정</button>
+        <button class="note-toggle" onclick="toggleNotePublic('${n.id}', ${pub ? 'false' : 'true'})">${pub ? '🔒 나만 보기로 바꾸기' : '👥 전체공개로 바꾸기'}</button>
+      </div>` : ''}
     </div>`;
   }).join(''):'<div style="font-size:13px;color:var(--text3);margin-bottom:12px">메모 없음</div>';
+}
+
+let _notesById = {};
+const _fmtNoteDate = d => new Date(d).toLocaleDateString('ko-KR',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'});
+
+// 본인 메모 수정 (그 자리에서 편집 → 저장/취소)
+function startEditNote(noteId) {
+  const n = _notesById[noteId];
+  const textEl = document.getElementById('noteText-' + noteId);
+  const actEl = document.getElementById('noteActions-' + noteId);
+  if (!n || !textEl || !actEl) return;
+  textEl.innerHTML = `<textarea class="note-edit-area" id="noteEdit-${noteId}" rows="3"></textarea>`;
+  const ta = document.getElementById('noteEdit-' + noteId);
+  ta.value = n.content || '';   // value로 넣어서 특수문자 안전
+  ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  actEl.innerHTML = `
+    <button class="btn btn-primary btn-sm" style="padding:4px 12px;font-size:12px" onclick="saveEditNote('${noteId}')">저장</button>
+    <button class="btn btn-sm" style="padding:4px 12px;font-size:12px" onclick="loadNotes(currentAppId)">취소</button>`;
+}
+
+let _noteEditSaving = false;
+async function saveEditNote(noteId) {
+  if (_noteEditSaving) return;
+  const ta = document.getElementById('noteEdit-' + noteId);
+  const content = (ta?.value || '').trim();
+  if (!content) { showToast('메모 내용을 입력하세요'); return; }
+  if (content === (_notesById[noteId]?.content || '').trim()) { await loadNotes(currentAppId); return; }
+  _noteEditSaving = true;
+  try {
+    const { data, error } = await sb.from('admin_notes').update({ content })
+      .eq('id', noteId).eq('author_id', currentAdmin.id).select('id');
+    if (error || !data?.length) { showToast('수정 실패' + (error ? ': ' + error.message : ' (본인 메모만 수정 가능)')); return; }
+    await loadNotes(currentAppId);
+    showToast('✓ 메모 수정');
+  } finally { _noteEditSaving = false; }
 }
 
 let _noteSaving = false;
