@@ -346,6 +346,16 @@ body{font-family:'Pretendard',-apple-system,sans-serif;background:var(--bg);colo
 .note-author{font-size:12px;font-weight:500;margin-bottom:4px}
 .note-text{font-size:13px;color:var(--text2);line-height:1.6}
 .note-date{font-size:11px;color:var(--text3);margin-top:4px}
+.note-card.private{background:#F6F6F4;border:1px dashed var(--border2)}
+.note-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
+.note-head .note-author{margin-bottom:0}
+.note-badge{font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap}
+.note-badge.pub{background:#EEEDFE;color:#3C3489}
+.note-badge.priv{background:#EDEDEA;color:#5F5E5A}
+.note-toggle{font-size:11px;color:#534AB7;background:none;border:none;cursor:pointer;padding:0;margin-top:6px;text-decoration:underline}
+.note-compose-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.note-public-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none}
+.note-public-chk input{width:15px;height:15px;accent-color:#534AB7;cursor:pointer}
 .note-compose textarea{font-family:'Pretendard',sans-serif;font-size:13px;color:var(--text);background:var(--surface2);border:0.5px solid var(--border2);border-radius:var(--rxs);padding:10px 12px;outline:none;width:100%;resize:none;line-height:1.6;margin-bottom:8px}
 .note-compose textarea:focus{border-color:var(--accent);background:var(--surface)}
 
@@ -946,8 +956,13 @@ function safeUrl(u) {
       <div id="tabNotes" class="tab-content">
         <div id="mNotesList"></div>
         <div class="note-compose" style="margin-top:14px">
-          <textarea id="noteInput" rows="3" placeholder="메모 입력..."></textarea>
-          <button class="btn btn-primary btn-sm" onclick="saveNote()">저장</button>
+          <textarea id="noteInput" rows="3" placeholder="메모 입력... (기본: 나만 보기)"></textarea>
+          <div class="note-compose-row">
+            <label class="note-public-chk" title="체크하면 다른 관리자·면접관도 이 메모를 볼 수 있습니다">
+              <input type="checkbox" id="notePublic"> 👥 전체공개 <span style="color:var(--text3)">(면접 때 다른 사람도 봄)</span>
+            </label>
+            <button class="btn btn-primary btn-sm" onclick="saveNote()">저장</button>
+          </div>
         </div>
       </div>
     </div>
@@ -2539,10 +2554,13 @@ function renderRejectReasons(app) {
 // ── 경력 기간 계산 (공통) ────────────────────────────────
 // 기준: 입사월·퇴사월 모두 포함 (예: 2020-01 ~ 2020-12 = 1년)
 //       겹치는 기간(동시 재직)은 한 번만 계산 / 미래 퇴사월은 이번 달까지만
+// 날짜 형식이 달라도 인식: 2012-06 / 2012.06 / 2012/06 / 2012.6 / 201206 / 2012-06-01 / 2012년 6월
 function _ymIndex(s) {
   if (!s) return null;
-  const [y, m] = String(s).split('-').map(Number);
-  if (!y || !m) return null;
+  const mt = String(s).trim().match(/^(\d{4})\D*(\d{1,2})/);
+  if (!mt) return null;
+  const y = Number(mt[1]), m = Number(mt[2]);
+  if (!y || m < 1 || m > 12) return null;
   return y * 12 + (m - 1);
 }
 function _nowYmIndex() { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); }
@@ -2767,19 +2785,50 @@ async function openModal(id) {
   }
 }
 
+// 메모 공개범위: 기본 "나만 보기", 체크 시 "전체공개" (실제 차단은 DB RLS가 담당)
 async function loadNotes(id) {
+  // RLS가 "내 메모 + 전체공개 메모"만 돌려줌
   const {data:notes}=await sb.from('admin_notes').select('*').eq('application_id',id).order('created_at',{ascending:false});
-  document.getElementById('mNotesList').innerHTML=(notes||[]).length?(notes||[]).map(n=>`<div class="note-card"><div class="note-author">${esc(n.author_name)}</div><div class="note-text">${esc(n.content)}</div><div class="note-date">${new Date(n.created_at).toLocaleDateString('ko-KR',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text3);margin-bottom:12px">메모 없음</div>';
+  document.getElementById('mNotesList').innerHTML=(notes||[]).length?(notes||[]).map(n=>{
+    const mine = n.author_id && n.author_id === currentAdmin?.id;
+    const pub = n.is_public !== false;
+    return `<div class="note-card${pub ? '' : ' private'}">
+      <div class="note-head">
+        <div class="note-author">${esc(n.author_name)}${mine ? ' <span style="font-size:11px;color:var(--text3);font-weight:400">(나)</span>' : ''}</div>
+        <span class="note-badge ${pub ? 'pub' : 'priv'}">${pub ? '👥 전체공개' : '🔒 나만 보기'}</span>
+      </div>
+      <div class="note-text" style="white-space:pre-wrap">${esc(n.content)}</div>
+      <div class="note-date">${new Date(n.created_at).toLocaleDateString('ko-KR',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+      ${mine ? `<button class="note-toggle" onclick="toggleNotePublic('${n.id}', ${pub ? 'false' : 'true'})">${pub ? '🔒 나만 보기로 바꾸기' : '👥 전체공개로 바꾸기'}</button>` : ''}
+    </div>`;
+  }).join(''):'<div style="font-size:13px;color:var(--text3);margin-bottom:12px">메모 없음</div>';
 }
 
+let _noteSaving = false;
 async function saveNote() {
+  if (_noteSaving) return;
   const content=document.getElementById('noteInput').value.trim();
   if(!content){showToast('메모를 입력하세요');return;}
+  const isPublic = !!document.getElementById('notePublic')?.checked;
   const authorName=adminProfile?.name||currentAdmin.email.split('@')[0];
-  await sb.from('admin_notes').insert({application_id:currentAppId,author_name:authorName,content});
-  document.getElementById('noteInput').value='';
+  _noteSaving = true;
+  try {
+    const { error } = await sb.from('admin_notes').insert({application_id:currentAppId,author_id:currentAdmin.id,author_name:authorName,content,is_public:isPublic});
+    if (error) { showToast('메모 저장 실패: ' + error.message); return; }
+    document.getElementById('noteInput').value='';
+    const chk = document.getElementById('notePublic'); if (chk) chk.checked = false; // 다음 메모는 다시 기본값(나만 보기)
+    await loadNotes(currentAppId);
+    showToast(isPublic ? '✓ 메모 저장 (전체공개)' : '✓ 메모 저장 (나만 보기)');
+  } finally { _noteSaving = false; }
+}
+
+// 본인 메모의 공개범위 변경
+async function toggleNotePublic(noteId, makePublic) {
+  if (makePublic && !confirm('이 메모를 전체공개로 바꿀까요?\n다른 관리자·면접관도 보게 됩니다.')) return;
+  const { data, error } = await sb.from('admin_notes').update({ is_public: makePublic }).eq('id', noteId).eq('author_id', currentAdmin.id).select('id');
+  if (error || !data?.length) { showToast('변경 실패' + (error ? ': ' + error.message : '')); return; }
   await loadNotes(currentAppId);
-  showToast('✓ 메모 저장');
+  showToast(makePublic ? '👥 전체공개로 변경' : '🔒 나만 보기로 변경');
 }
 
 function closeModal() {
@@ -5174,7 +5223,7 @@ async function renderInterviewSession(app) {
   const memoHtml = (notes||[]).length ? `<div style="min-width:180px;max-width:220px;background:#FFFBE6;border:1px solid #FFE58F;border-radius:var(--rxs);padding:10px;flex-shrink:0;overflow-y:auto;max-height:150px">
     <div style="font-size:10px;font-weight:700;color:#876800;margin-bottom:5px">📌 관리자 메모 (${(notes||[]).length})</div>
     ${(notes||[]).map(n=>`<div style="font-size:12px;color:#333;line-height:1.5;margin-bottom:6px;padding-bottom:6px;border-bottom:0.5px solid #FFE58F">
-      <div style="font-size:10px;color:#876800;margin-bottom:2px">${esc(n.author_name)||'-'}</div>
+      <div style="font-size:10px;color:#876800;margin-bottom:2px">${esc(n.author_name)||'-'}${n.is_public === false ? ' · 🔒 나만 보기' : ''}</div>
       <div style="white-space:pre-wrap">${esc(n.content)||''}</div>
     </div>`).join('')}
   </div>` : '';
