@@ -5238,7 +5238,15 @@ async function openIvMemoWindow() {
     .list{padding:10px 12px 24px}
     .n{background:#fff;border:1px solid #FFE58F;border-radius:10px;padding:12px 14px;margin-bottom:10px}
     .n.priv{border-style:dashed;background:#FAFAF7}
-    .a{font-size:12px;color:#876800;margin-bottom:6px;font-weight:600}
+    .a{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#876800;margin-bottom:6px;font-weight:600}
+    .eb{font-size:12px;font-weight:600;border:1px solid #FFD666;background:#FFFBE6;color:#614700;border-radius:20px;padding:2px 10px;cursor:pointer;white-space:nowrap}
+    .ta{width:100%;font:inherit;line-height:1.6;border:1.5px solid #D4A72C;border-radius:8px;padding:8px 10px;resize:vertical;outline:none;background:#fff}
+    .ea{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:6px}
+    .ea .kh{flex:1;font-size:11px;color:#A08A4A}
+    .ea button{font-size:13px;font-weight:600;border-radius:8px;padding:5px 14px;cursor:pointer}
+    .ea .cb{border:1px solid #ddd;background:#fff;color:#555}
+    .ea .sb{border:1px solid #534AB7;background:#534AB7;color:#fff}
+    .ea .sb:disabled{opacity:.6;cursor:default}
     .c{white-space:pre-wrap;word-break:break-word;line-height:1.7}
     .d{font-size:11px;color:#999;margin-top:6px}
     .empty{color:#999;text-align:center;padding:40px 0}
@@ -5255,6 +5263,7 @@ async function openIvMemoWindow() {
   d.getElementById('mwMinus').addEventListener('click', () => _setIvMemoFont(-2));
   d.getElementById('mwPlus').addEventListener('click', () => _setIvMemoFont(2));
   d.getElementById('mwReload').addEventListener('click', reloadIvMemoWindow);
+  d.getElementById('mwList').addEventListener('click', _onIvMemoClick);
   win.addEventListener('pagehide', () => { _ivMemoWin = null; });
   renderIvMemoWindow();
 }
@@ -5267,9 +5276,32 @@ function _setIvMemoFont(delta) {
 
 async function reloadIvMemoWindow() {
   if (!_ivMemoState.appId) return;
+  if (_ivMemoState.editingId && !_ivMemoWin?.confirm('수정 중인 내용이 있습니다. 저장하지 않고 새로고침할까요?')) return;
+  _ivMemoState.editingId = null; _ivMemoState.draft = null;
   const { data } = await sb.from('admin_notes').select('*').eq('application_id', _ivMemoState.appId).order('created_at', { ascending: false });
   _ivMemoState.notes = data || [];
   renderIvMemoWindow();
+  _refreshIvMemoBox();
+}
+
+// 면접 화면 이력서 상단의 노란 메모 칸 (팝업에서 수정하면 이 칸도 같이 갱신)
+function _ivMemoBoxHtml(notes) {
+  notes = notes || [];
+  if (!notes.length) return '';
+  return `<div id="ivMemoBox" style="min-width:180px;max-width:220px;background:#FFFBE6;border:1px solid #FFE58F;border-radius:var(--rxs);padding:10px;flex-shrink:0;overflow-y:auto;max-height:150px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px">
+      <span style="font-size:10px;font-weight:700;color:#876800">📌 관리자 메모 (${notes.length})</span>
+      <button onclick="openIvMemoWindow()" title="메모를 별도 창으로 크게 띄웁니다 (Chrome·Edge: 항상 위)" style="font-size:10px;font-weight:600;color:#876800;background:#FFF1B8;border:1px solid #FFD666;border-radius:20px;padding:2px 8px;cursor:pointer;white-space:nowrap">🗗 크게 보기</button>
+    </div>
+    ${notes.map(n=>`<div style="font-size:12px;color:#333;line-height:1.5;margin-bottom:6px;padding-bottom:6px;border-bottom:0.5px solid #FFE58F">
+      <div style="font-size:10px;color:#876800;margin-bottom:2px">${esc(n.author_name)||'-'}${n.is_public === false ? ' · 🔒 나만 보기' : ''}</div>
+      <div style="white-space:pre-wrap">${esc(n.content)||''}</div>
+    </div>`).join('')}
+  </div>`;
+}
+function _refreshIvMemoBox() {
+  const box = document.getElementById('ivMemoBox');
+  if (box) box.outerHTML = _ivMemoBoxHtml(_ivMemoState.notes);
 }
 
 function renderIvMemoWindow() {
@@ -5279,14 +5311,83 @@ function renderIvMemoWindow() {
   const list = d.getElementById('mwList');
   if (!list) return;
   const notes = _ivMemoState.notes || [];
+  const myId = currentAdmin?.id;
+  if (_ivMemoState.editingId && !notes.some(n => n.id === _ivMemoState.editingId)) _ivMemoState.editingId = null;
   d.getElementById('mwTitle').textContent = `📌 ${_ivMemoState.name} 메모 (${notes.length})`;
   list.style.fontSize = _ivMemoState.font + 'px';
-  list.innerHTML = notes.length ? notes.map(n => `
+  list.innerHTML = notes.length ? notes.map(n => {
+    const mine = n.author_id && n.author_id === myId;
+    const editing = mine && _ivMemoState.editingId === n.id;
+    return `
     <div class="n${n.is_public === false ? ' priv' : ''}">
-      <div class="a">${esc(n.author_name) || '-'}${n.is_public === false ? ' · 🔒 나만 보기' : ''}</div>
-      <div class="c">${esc(n.content) || ''}</div>
+      <div class="a"><span>${esc(n.author_name) || '-'}${mine ? ' (나)' : ''}${n.is_public === false ? ' · 🔒 나만 보기' : ''}</span>
+        ${mine && !editing ? `<button class="eb" data-act="edit" data-id="${esc(n.id)}">✏️ 수정</button>` : ''}</div>
+      ${editing ? `
+        <textarea class="ta" id="mwEdit" rows="5"></textarea>
+        <div class="ea">
+          <span class="kh">Ctrl+Enter 저장</span>
+          <button class="cb" data-act="cancel">취소</button>
+          <button class="sb" data-act="save" data-id="${esc(n.id)}">저장</button>
+        </div>`
+      : `<div class="c">${esc(n.content) || ''}</div>`}
       <div class="d">${new Date(n.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${n.updated_at && new Date(n.updated_at) - new Date(n.created_at) > 1000 ? ' · ✏️ 수정됨' : ''}</div>
-    </div>`).join('') : '<div class="empty">메모 없음</div>';
+    </div>`;
+  }).join('') : '<div class="empty">메모 없음</div>';
+  const ta = d.getElementById('mwEdit');
+  if (ta) {
+    ta.value = _ivMemoState.draft ?? '';   // value로 넣어서 특수문자 안전
+    ta.addEventListener('input', () => { _ivMemoState.draft = ta.value; });
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveIvMemoEdit(_ivMemoState.editingId); } });
+    ta.focus();
+  }
+}
+
+// 팝업 안 버튼 처리 (수정 / 취소 / 저장)
+function _onIvMemoClick(e) {
+  const btn = e.target.closest && e.target.closest('[data-act]');
+  if (!btn) return;
+  const act = btn.getAttribute('data-act');
+  if (act === 'edit') {
+    const n = (_ivMemoState.notes || []).find(x => String(x.id) === btn.getAttribute('data-id'));
+    if (!n) return;
+    _ivMemoState.editingId = n.id;
+    _ivMemoState.draft = n.content || '';
+    renderIvMemoWindow();
+  } else if (act === 'cancel') {
+    _ivMemoState.editingId = null; _ivMemoState.draft = null;
+    renderIvMemoWindow();
+  } else if (act === 'save') {
+    _saveIvMemoEdit(_ivMemoState.editingId);
+  }
+}
+
+let _ivMemoSaving = false;
+async function _saveIvMemoEdit(noteId) {
+  if (_ivMemoSaving || !noteId) return;
+  const content = String(_ivMemoState.draft ?? '').trim();
+  const d = _ivMemoWin?.document;
+  if (!content) { if (d) _ivMemoWin.alert('메모 내용을 입력하세요'); return; }
+  const n = (_ivMemoState.notes || []).find(x => x.id === noteId);
+  if (n && content === (n.content || '').trim()) { _ivMemoState.editingId = null; _ivMemoState.draft = null; renderIvMemoWindow(); return; }
+  _ivMemoSaving = true;
+  const sbtn = d?.querySelector('[data-act="save"]');
+  if (sbtn) { sbtn.disabled = true; sbtn.textContent = '저장 중...'; }
+  try {
+    const { data, error } = await sb.from('admin_notes').update({ content })
+      .eq('id', noteId).eq('author_id', currentAdmin.id).select('*');
+    if (error || !data?.length) {
+      _ivMemoWin?.alert('수정 실패' + (error ? ': ' + error.message : ' (본인 메모만 수정 가능)'));
+      if (sbtn) { sbtn.disabled = false; sbtn.textContent = '저장'; }
+      return;
+    }
+    // 화면 데이터 갱신: 팝업 + 면접 화면 메모 칸 + (열려 있으면) 지원자 상세 메모 탭
+    _ivMemoState.notes = _ivMemoState.notes.map(x => x.id === noteId ? { ...x, ...data[0] } : x);
+    _ivMemoState.editingId = null; _ivMemoState.draft = null;
+    renderIvMemoWindow();
+    _refreshIvMemoBox();
+    if (currentAppId === _ivMemoState.appId && document.getElementById('mNotesList') && typeof loadNotes === 'function') loadNotes(currentAppId);
+    showToast('✓ 메모 수정');
+  } finally { _ivMemoSaving = false; }
 }
 
 async function openInterviewSession(appId, isDispatch) {
@@ -5349,20 +5450,12 @@ async function renderInterviewSession(app) {
   // 메모 크게 보기 창용 데이터 (열려 있으면 이 지원자로 갱신)
   _ivMemoState.notes = notes || [];
   _ivMemoState.name = app.name || '-';
+  if (_ivMemoState.appId !== appId2) { _ivMemoState.editingId = null; _ivMemoState.draft = null; }
   _ivMemoState.appId = appId2;
   if (_ivMemoWin && !_ivMemoWin.closed) renderIvMemoWindow();
 
   // 메모 HTML 미리 생성
-  const memoHtml = (notes||[]).length ? `<div style="min-width:180px;max-width:220px;background:#FFFBE6;border:1px solid #FFE58F;border-radius:var(--rxs);padding:10px;flex-shrink:0;overflow-y:auto;max-height:150px">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px">
-      <span style="font-size:10px;font-weight:700;color:#876800">📌 관리자 메모 (${(notes||[]).length})</span>
-      <button onclick="openIvMemoWindow()" title="메모를 별도 창으로 크게 띄웁니다 (Chrome·Edge: 항상 위)" style="font-size:10px;font-weight:600;color:#876800;background:#FFF1B8;border:1px solid #FFD666;border-radius:20px;padding:2px 8px;cursor:pointer;white-space:nowrap">🗗 크게 보기</button>
-    </div>
-    ${(notes||[]).map(n=>`<div style="font-size:12px;color:#333;line-height:1.5;margin-bottom:6px;padding-bottom:6px;border-bottom:0.5px solid #FFE58F">
-      <div style="font-size:10px;color:#876800;margin-bottom:2px">${esc(n.author_name)||'-'}${n.is_public === false ? ' · 🔒 나만 보기' : ''}</div>
-      <div style="white-space:pre-wrap">${esc(n.content)||''}</div>
-    </div>`).join('')}
-  </div>` : '';
+  const memoHtml = _ivMemoBoxHtml(notes);
 
   // 합격/불합격 버튼
   const passBtn = `<button class="iv-pass-btn" style="background:#EAF3DE;color:#27500A" onclick="ivDecision('pass')">✅ 합격</button>`;
