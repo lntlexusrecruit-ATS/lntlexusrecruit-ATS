@@ -6016,6 +6016,25 @@ async function loadSchedulePanel() {
       <div style="font-size:15px;font-weight:700;color:#1a1a1a">${formatSlotDate(selectedSlot.interview_slots?.slot_date)}</div>
       <div style="font-size:14px;color:#534AB7;font-weight:600">${formatSlotTime(selectedSlot.interview_slots?.slot_time)}</div>
       ${selectedSlot.interview_slots?.slot_location?`<div style="font-size:12px;color:#444;margin-top:4px">📍 ${esc(selectedSlot.interview_slots.slot_location)}</div>`:''}
+      ${isSuperAdmin && selectedSlot.interview_slots ? `
+      <button class="btn btn-sm" style="width:100%;margin-top:10px;padding:8px;background:#fff;border:1px solid #C9C4F2;color:#3C3489;font-weight:600" onclick="toggleChangeSlotForm()">✏️ 일정 직접 변경</button>
+      <div id="changeSlotForm" style="display:none;margin-top:10px;padding:12px;background:#fff;border-radius:var(--rxs);text-align:left">
+        <div style="font-size:11px;color:#7A3D00;background:#FFF6E5;border-radius:6px;padding:7px 9px;margin-bottom:10px;line-height:1.5">지원자와 <b>전화로 합의한 일정</b>으로 바로 바꿉니다. 지원자에게는 카톡이 가지 않고, 면접관들에게 잔디로 변경 알림이 갑니다.</div>
+        <label style="font-size:11px;color:var(--text2);font-weight:600">날짜</label>
+        <input type="date" id="chgSlotDate" value="${esc(selectedSlot.interview_slots.slot_date||'')}" style="width:100%;margin:3px 0 8px;padding:7px;border:1px solid var(--border2);border-radius:6px;font-size:13px">
+        <div style="display:flex;gap:8px">
+          <div style="flex:1"><label style="font-size:11px;color:var(--text2);font-weight:600">시작</label>
+            <input type="time" id="chgSlotTime" value="${esc(String(selectedSlot.interview_slots.slot_time||'').slice(0,5))}" style="width:100%;margin:3px 0 8px;padding:7px;border:1px solid var(--border2);border-radius:6px;font-size:13px"></div>
+          <div style="flex:1"><label style="font-size:11px;color:var(--text2);font-weight:600">종료 (선택)</label>
+            <input type="time" id="chgSlotEnd" value="${esc(String(selectedSlot.interview_slots.slot_time_end||'').slice(0,5))}" style="width:100%;margin:3px 0 8px;padding:7px;border:1px solid var(--border2);border-radius:6px;font-size:13px"></div>
+        </div>
+        <label style="font-size:11px;color:var(--text2);font-weight:600">장소</label>
+        <input type="text" id="chgSlotLoc" value="${esc(selectedSlot.interview_slots.slot_location||'')}" placeholder="면접 장소" style="width:100%;margin:3px 0 10px;padding:7px;border:1px solid var(--border2);border-radius:6px;font-size:13px">
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" style="flex:1;padding:8px" onclick="toggleChangeSlotForm()">취소</button>
+          <button class="btn btn-primary btn-sm" id="btnChangeSlot" style="flex:2;padding:8px" onclick="changeConfirmedSlot('${selectedSlot.slot_id}')">변경 저장</button>
+        </div>
+      </div>` : ''}
     </div>`
   : (selectedSlot && selectedSlot.response_type === 'unavailable') ? `
     <div style="padding:14px;background:#FEF3E2;border-radius:var(--rsm);margin-bottom:16px">
@@ -6640,6 +6659,85 @@ async function confirmSlot(slotId) {
 }
 
 // 슬롯 장소 수정 (지원자가 아직 확정하지 않은 경우)
+// ── 확정된 면접 일정 직접 변경 (슈퍼어드민, 지원자와 전화 합의 후) ──
+function toggleChangeSlotForm() {
+  const f = document.getElementById('changeSlotForm');
+  if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+let _changingSlot = false;
+async function changeConfirmedSlot(slotId) {
+  if (_changingSlot) return;
+  if (adminProfile?.role !== 'superadmin') { showToast('슈퍼어드민만 변경할 수 있습니다'); return; }
+  const date = document.getElementById('chgSlotDate')?.value || '';
+  const time = document.getElementById('chgSlotTime')?.value || '';
+  const end = document.getElementById('chgSlotEnd')?.value || '';
+  const loc = (document.getElementById('chgSlotLoc')?.value || '').trim();
+  if (!date || !time) { showToast('날짜와 시작 시간을 입력하세요'); return; }
+  if (end && end <= time) { showToast('종료 시간은 시작 시간보다 늦어야 합니다'); return; }
+
+  // 기존 일정 (알림·기록용)
+  const { data: old } = await sb.from('interview_slots').select('*').eq('id', slotId).maybeSingle();
+  if (!old) { showToast('기존 일정을 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요'); return; }
+  const oldStr = `${formatSlotDate(old.slot_date)} ${formatSlotTime(old.slot_time)}`;
+  const newStr = `${formatSlotDate(date)} ${formatSlotTime(time)}${end ? ' ~ ' + formatSlotTime(end) : ''}`;
+
+  // 면접관 다른 면접과 겹치는지 확인 (같은 면접관이 이미 확정된 시간대)
+  const clash = _schedBlockedTimes?.get(`${date}|${time}:00`);
+  let msg = `면접 일정을 변경할까요?\n\n기존: ${oldStr}\n변경: ${newStr}${loc ? '\n장소: ' + loc : ''}\n\n· 지원자에게는 카톡이 가지 않습니다 (전화로 안내해 주세요)\n· 면접관들에게 잔디 변경 알림이 갑니다`;
+  if (clash) msg = `⚠️ 이 시간에 면접관의 다른 면접(${clash})이 이미 확정돼 있습니다.\n\n` + msg;
+  if (!confirm(msg)) return;
+
+  _changingSlot = true;
+  const btn = document.getElementById('btnChangeSlot');
+  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+  try {
+    const { data: upd, error } = await sb.from('interview_slots')
+      .update({ slot_date: date, slot_time: time, slot_time_end: end || null, slot_location: loc || null })
+      .eq('id', slotId).select('id');
+    if (error || !upd?.length) { showToast('변경 실패' + (error ? ': ' + error.message : '')); return; }
+
+    // 지원자 화면 "면접 예정" 일시도 맞춤 (정규 지원자만)
+    let app = null, jobTitle = '';
+    if (!_schedIsDispatch) {
+      app = allApps.find(a => a.id === _schedAppId);
+      jobTitle = app?.job_postings?.title || '';
+      const { error: aErr } = await sb.from('applications')
+        .update({ interview_date: date, interview_time: time }).eq('id', _schedAppId);
+      if (aErr) console.error('applications interview_date update error', aErr);
+    }
+    const name = app?.name || (window._dispatchCands||[]).find(c => c.id === _schedAppId)?.name || '지원자';
+
+    // 면접관(해당 라운드) + 서류검토 담당자에게 잔디 알림
+    try {
+      const recipients = new Set();
+      if (_schedIsDispatch) {
+        const cand = (window._dispatchCands||[]).find(c => c.id === _schedAppId);
+        const { data: dIvs } = await sb.from('dispatch_job_interviewers').select('admin_profiles(email)').eq('dispatch_posting_id', cand?.dispatch_posting_id || '');
+        (dIvs||[]).forEach(p => p.admin_profiles?.email && recipients.add(p.admin_profiles.email));
+        jobTitle = '파견직';
+      } else if (app?.job_posting_id) {
+        const [{ data: perms }, { data: ivs }] = await Promise.all([
+          fetchPermProfiles(app.job_posting_id),
+          sb.from(_schedRound === 2 ? 'job_interviewers_2nd' : 'job_interviewers').select('admin_profiles(email)').eq('job_id', app.job_posting_id)
+        ]);
+        [...(perms||[]), ...(ivs||[])].forEach(p => p.admin_profiles?.email && recipients.add(p.admin_profiles.email));
+      }
+      sendJandi([...recipients], '🔄 면접 일정이 변경되었습니다', [
+        { title: `🔄 ${newStr} — ${name}님 ${_schedRound}차 면접`, description: `${jobTitle}\n기존: ${oldStr}${loc ? '\n장소: ' + loc : ''}` }
+      ]);
+    } catch(e) { console.error('jandi notify error', e); }
+
+    try { logAudit(`면접 일정 변경(${_schedRound}차) ${oldStr} → ${newStr}`, _schedIsDispatch ? 'dispatch_candidate' : 'application', _schedAppId, name); } catch(e) {}
+    showToast('✓ 면접 일정이 변경되었습니다');
+    await loadSchedulePanel();
+  } finally {
+    _changingSlot = false;
+    const b = document.getElementById('btnChangeSlot');
+    if (b) { b.disabled = false; b.textContent = '변경 저장'; }
+  }
+}
+
 async function editSlotLocation(slotId) {
   const slot = _schedSlots.find(s => s.id === slotId);
   if (!slot) return;
