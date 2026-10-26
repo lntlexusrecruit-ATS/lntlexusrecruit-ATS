@@ -2675,11 +2675,19 @@ const OFFER_MAIL_CC = [
   'JIWOON MA <jwma@lexuslnt.com>',
 ];
 const OFFER_MAIL_PDF = { url: 'onboarding-docs.pdf', name: '입사구비서류.pdf' };
+// 본문 맨 아래 서명 (고정)
+const OFFER_MAIL_SIGNATURE = [
+  'L&T LEXUS',
+  'Soon-Hyoung Kim',
+  'HR/GA Dept.',
+  'E-mail. shkim2@lexuslnt.com',
+  'Tel. 02-2188-3565',
+  'Fax. 02-555-0641',
+];
 const OFFER_MAIL_DEFAULTS = {
   dept: '엘앤티렉서스 영업부문 SC',
   time: '09:00',
-  place: '서울시 강남구 영동대로 312 엘앤티렉서스 4층',
-  contact: ''
+  place: '서울시 강남구 영동대로 312 엘앤티렉서스 4층'
 };
 function _offerMailSaved() {
   try { return { ...OFFER_MAIL_DEFAULTS, ...JSON.parse(localStorage.getItem('offerMailDefaults2') || '{}') }; }
@@ -2726,8 +2734,7 @@ function openOfferMailForm() {
       </div>
       <label style="${lbl}">배치</label><input type="text" id="omDept" style="${fld}">
       <label style="${lbl}">출근장소</label><input type="text" id="omPlace" style="${fld}">
-      <label style="${lbl}">연락처 (본문 맨 아래, 선택)</label><input type="text" id="omContact" placeholder="예: Tel. 02-2188-3565 / shkim2@lexuslnt.com" style="${fld}">
-      <div style="font-size:11px;color:var(--text3);margin:-4px 0 14px;line-height:1.5">배치·시간·출근장소·연락처는 다음에도 자동으로 채워집니다.</div>
+      <div style="font-size:11px;color:var(--text3);margin:-4px 0 14px;line-height:1.5">배치·시간·출근장소는 다음에도 자동으로 채워집니다. 본문 맨 아래에 서명(Soon-Hyoung Kim · Tel · Fax)이 자동으로 붙습니다.</div>
       <button class="btn btn-primary btn-sm" style="width:100%;padding:11px;font-size:14px" onclick="downloadOfferMailEml()">📎 메일 파일 만들기 (첨부 포함)</button>
       <div style="font-size:11px;color:var(--text3);margin:6px 0 12px;line-height:1.5;text-align:center">다운로드된 파일을 열면 Outlook 새 메일 창이 뜹니다 → 확인 후 [보내기]</div>
       <div style="display:flex;gap:8px">
@@ -2742,7 +2749,6 @@ function openOfferMailForm() {
   document.getElementById('omTime').value = v.time || '09:00';
   document.getElementById('omDept').value = v.dept || '';
   document.getElementById('omPlace').value = v.place || '';
-  document.getElementById('omContact').value = v.contact || '';
   document.getElementById('omDate').focus();
 }
 
@@ -2751,7 +2757,7 @@ function _buildOfferMail() {
   const g = id => (document.getElementById(id)?.value || '').trim();
   const date = g('omDate');
   if (!date) { showToast('입사일자를 선택하세요'); document.getElementById('omDate')?.focus(); return null; }
-  const vals = { dept: g('omDept'), time: g('omTime'), place: g('omPlace'), contact: g('omContact') };
+  const vals = { dept: g('omDept'), time: g('omTime'), place: g('omPlace') };
   try { localStorage.setItem('offerMailDefaults2', JSON.stringify(vals)); } catch(e) {}
   const pos = g('omPos');
   const lines = [
@@ -2776,8 +2782,10 @@ function _buildOfferMail() {
     ``,
     `감사합니다.`,
     `엘앤티렉서스 인사총무팀 드림`,
+    ``,
+    ``,
+    ...OFFER_MAIL_SIGNATURE,
   ];
-  if (vals.contact) lines.push(vals.contact);
   return {
     app, date,
     to: app.email,
