@@ -5204,6 +5204,91 @@ function renderIvList(sortedDates, byDate, todayStr) {
 // ── 면접 세션 (개별 지원자 면접 진행) ─────────────────────────────────────
 let _ivSessionAppId = null, _ivSessionIsDispatch = false, _ivSessionRound = 1;
 
+// ── 면접 메모 크게 보기 창 ─────────────────────────────────
+// Chrome·Edge: 문서 PIP 창 → 다른 창 위에 항상 떠 있음 (이력서 스크롤해도 계속 보임)
+// 그 외 브라우저: 일반 팝업 창 (항상 위 기능은 브라우저가 지원하지 않음)
+let _ivMemoWin = null;
+const _ivMemoState = { notes: [], name: '-', appId: null, font: 16 };
+try { _ivMemoState.font = Number(localStorage.getItem('ivMemoFont')) || 16; } catch(e) {}
+
+async function openIvMemoWindow() {
+  if (_ivMemoWin && !_ivMemoWin.closed) { try { _ivMemoWin.focus(); } catch(e) {} renderIvMemoWindow(); return; }
+  let win = null, pinned = false;
+  if ('documentPictureInPicture' in window) {
+    try {
+      win = await window.documentPictureInPicture.requestWindow({ width: 440, height: 620 });
+      pinned = true;
+    } catch(e) { win = null; }
+  }
+  if (!win) {
+    win = window.open('', 'ivMemoWindow', 'width=460,height=680,resizable=yes,scrollbars=yes');
+    if (!win) { alert('팝업이 차단되었습니다.\n주소창 오른쪽의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요.'); return; }
+  }
+  _ivMemoWin = win;
+  _ivMemoState.pinned = pinned;
+  const d = win.document;
+  d.title = '면접 메모';
+  d.head.innerHTML = `<meta charset="utf-8"><title>면접 메모</title><style>
+    *{box-sizing:border-box}
+    body{margin:0;font-family:'Pretendard',-apple-system,'Malgun Gothic',sans-serif;background:#FFFDF2;color:#222}
+    .bar{position:sticky;top:0;display:flex;align-items:center;gap:6px;padding:10px 12px;background:#FFF1B8;border-bottom:1px solid #FFD666;z-index:1}
+    .bar .t{flex:1;min-width:0;font-weight:700;font-size:14px;color:#614700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .bar button{font-size:13px;font-weight:600;border:1px solid #FFD666;background:#fff;color:#614700;border-radius:8px;padding:4px 9px;cursor:pointer}
+    .hint{font-size:11px;color:#8C6D1F;padding:6px 12px 0}
+    .list{padding:10px 12px 24px}
+    .n{background:#fff;border:1px solid #FFE58F;border-radius:10px;padding:12px 14px;margin-bottom:10px}
+    .n.priv{border-style:dashed;background:#FAFAF7}
+    .a{font-size:12px;color:#876800;margin-bottom:6px;font-weight:600}
+    .c{white-space:pre-wrap;word-break:break-word;line-height:1.7}
+    .d{font-size:11px;color:#999;margin-top:6px}
+    .empty{color:#999;text-align:center;padding:40px 0}
+  </style>`;
+  d.body.innerHTML = `
+    <div class="bar">
+      <span class="t" id="mwTitle">📌 메모</span>
+      <button id="mwMinus" title="글자 작게">A−</button>
+      <button id="mwPlus" title="글자 크게">A+</button>
+      <button id="mwReload" title="최신 메모 다시 불러오기">🔄</button>
+    </div>
+    <div class="hint">${pinned ? '📌 이 창은 다른 창 위에 항상 떠 있습니다. 모서리를 끌어 크기를 조절하세요.' : 'ℹ️ 이 브라우저는 "항상 위"를 지원하지 않습니다. Chrome·Edge에서 열면 항상 위에 떠 있습니다.'}</div>
+    <div class="list" id="mwList"></div>`;
+  d.getElementById('mwMinus').addEventListener('click', () => _setIvMemoFont(-2));
+  d.getElementById('mwPlus').addEventListener('click', () => _setIvMemoFont(2));
+  d.getElementById('mwReload').addEventListener('click', reloadIvMemoWindow);
+  win.addEventListener('pagehide', () => { _ivMemoWin = null; });
+  renderIvMemoWindow();
+}
+
+function _setIvMemoFont(delta) {
+  _ivMemoState.font = Math.min(30, Math.max(12, _ivMemoState.font + delta));
+  try { localStorage.setItem('ivMemoFont', String(_ivMemoState.font)); } catch(e) {}
+  renderIvMemoWindow();
+}
+
+async function reloadIvMemoWindow() {
+  if (!_ivMemoState.appId) return;
+  const { data } = await sb.from('admin_notes').select('*').eq('application_id', _ivMemoState.appId).order('created_at', { ascending: false });
+  _ivMemoState.notes = data || [];
+  renderIvMemoWindow();
+}
+
+function renderIvMemoWindow() {
+  const win = _ivMemoWin;
+  if (!win || win.closed) return;
+  const d = win.document;
+  const list = d.getElementById('mwList');
+  if (!list) return;
+  const notes = _ivMemoState.notes || [];
+  d.getElementById('mwTitle').textContent = `📌 ${_ivMemoState.name} 메모 (${notes.length})`;
+  list.style.fontSize = _ivMemoState.font + 'px';
+  list.innerHTML = notes.length ? notes.map(n => `
+    <div class="n${n.is_public === false ? ' priv' : ''}">
+      <div class="a">${esc(n.author_name) || '-'}${n.is_public === false ? ' · 🔒 나만 보기' : ''}</div>
+      <div class="c">${esc(n.content) || ''}</div>
+      <div class="d">${new Date(n.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${n.updated_at && new Date(n.updated_at) - new Date(n.created_at) > 1000 ? ' · ✏️ 수정됨' : ''}</div>
+    </div>`).join('') : '<div class="empty">메모 없음</div>';
+}
+
 async function openInterviewSession(appId, isDispatch) {
   _ivSessionAppId = appId;
   _ivSessionIsDispatch = isDispatch;
@@ -5261,9 +5346,18 @@ async function renderInterviewSession(app) {
     ${_ji.requirements ? `<div class="iv-job-info-sec-label">✅ 자격 요건</div><div class="iv-job-info-sec-body">${esc(_ji.requirements)}</div>` : ''}
   ` : '<div style="font-size:12px;color:var(--text3)">등록된 공고 정보가 없습니다</div>';
 
+  // 메모 크게 보기 창용 데이터 (열려 있으면 이 지원자로 갱신)
+  _ivMemoState.notes = notes || [];
+  _ivMemoState.name = app.name || '-';
+  _ivMemoState.appId = appId2;
+  if (_ivMemoWin && !_ivMemoWin.closed) renderIvMemoWindow();
+
   // 메모 HTML 미리 생성
   const memoHtml = (notes||[]).length ? `<div style="min-width:180px;max-width:220px;background:#FFFBE6;border:1px solid #FFE58F;border-radius:var(--rxs);padding:10px;flex-shrink:0;overflow-y:auto;max-height:150px">
-    <div style="font-size:10px;font-weight:700;color:#876800;margin-bottom:5px">📌 관리자 메모 (${(notes||[]).length})</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px">
+      <span style="font-size:10px;font-weight:700;color:#876800">📌 관리자 메모 (${(notes||[]).length})</span>
+      <button onclick="openIvMemoWindow()" title="메모를 별도 창으로 크게 띄웁니다 (Chrome·Edge: 항상 위)" style="font-size:10px;font-weight:600;color:#876800;background:#FFF1B8;border:1px solid #FFD666;border-radius:20px;padding:2px 8px;cursor:pointer;white-space:nowrap">🗗 크게 보기</button>
+    </div>
     ${(notes||[]).map(n=>`<div style="font-size:12px;color:#333;line-height:1.5;margin-bottom:6px;padding-bottom:6px;border-bottom:0.5px solid #FFE58F">
       <div style="font-size:10px;color:#876800;margin-bottom:2px">${esc(n.author_name)||'-'}${n.is_public === false ? ' · 🔒 나만 보기' : ''}</div>
       <div style="white-space:pre-wrap">${esc(n.content)||''}</div>
