@@ -4800,6 +4800,173 @@ async function notifyInterviewConfirmed(jobId, applicantName, jobTitle, round, d
 // ══════════════════════════════════════════════════════
 // 입사지원서 Word 다운로드 (docxtemplater)
 // ══════════════════════════════════════════════════════
+// ── 지원서 Word: 증명사진 처리 ────────────────────────────────
+// 사진을 3:4로 가운데 잘라 JPEG로 변환 (PNG·WEBP 등도 JPEG로 통일)
+async function _prepResumePhotoJpeg(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('사진 다운로드 실패 ' + res.status);
+  const bmp = await createImageBitmap(await res.blob());
+  const W = 600, H = 800, ratio = W / H;
+  let sw = bmp.width, sh = bmp.height, sx = 0, sy = 0;
+  if (sw / sh > ratio) { sw = sh * ratio; sx = (bmp.width - sw) / 2; }   // 가로가 넓으면 좌우 잘라냄
+  else { sh = sw / ratio; sy = (bmp.height - sh) / 2; }                   // 세로가 길면 위아래 잘라냄
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, W, H);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+// ── 지원서 Word: 빈 경력 줄 정리 ───────────────────────────────
+// 양식 안의 {경력N...} 태그를 보고, N이 keep보다 큰 경력만 들어있는
+//   · 표 전체(경력상세기술 블록 등) → 표째 삭제
+//   · 표의 줄(경력사항 목록) → 줄 삭제
+//   · 표 밖 문단 → 문단 삭제
+function _careerNums(fragment) {
+  const text = (fragment.match(/<w:t(?: [^>]*)?>[^<]*<\/w:t>/g) || []).map(t => t.replace(/<[^>]+>/g, '')).join('').replace(/\s/g, '');
+  const nums = new Set();
+  let m; const re = /\{경력(\d+)/g;
+  while ((m = re.exec(text))) nums.add(Number(m[1]));
+  return nums;
+}
+function _onlyBeyond(nums, keep) { return nums.size > 0 && [...nums].every(n => n > keep); }
+function _trimEmptyCareerBlocks(zip, keep) {
+  const path = 'word/document.xml';
+  let xml = zip.file(path)?.asText();
+  if (!xml) return;
+  const bodyStart = xml.indexOf('<w:body>');
+  const bodyEnd = xml.lastIndexOf('</w:body>');
+  if (bodyStart < 0 || bodyEnd < 0) return;
+  const head = xml.slice(0, bodyStart + 8), tail = xml.slice(bodyEnd);
+  let body = xml.slice(bodyStart + 8, bodyEnd);
+
+  // 최상위 표 단위로 나누기 (표 안의 표까지 고려해 짝 맞춤)
+  const out = [];
+  let i = 0;
+  while (i < body.length) {
+    const t = body.indexOf('<w:tbl>', i);
+    const seg = t < 0 ? body.slice(i) : body.slice(i, t);
+    // 표 밖 문단 처리
+    out.push(seg.replace(/<w:p(?: [^>]*)?>[\s\S]*?<\/w:p>/g, p => _onlyBeyond(_careerNums(p), keep) ? '' : p));
+    if (t < 0) break;
+    // 짝이 맞는 </w:tbl> 찾기
+    let depth = 0, j = t, end = -1;
+    const re = /<w:tbl>|<\/w:tbl>/g; re.lastIndex = t;
+    let m;
+    while ((m = re.exec(body))) {
+      depth += m[0] === '<w:tbl>' ? 1 : -1;
+      if (depth === 0) { end = re.lastIndex; break; }
+    }
+    if (end < 0) { out.push(body.slice(t)); break; }
+    let tbl = body.slice(t, end);
+    const nums = _careerNums(tbl);
+    if (_onlyBeyond(nums, keep)) {
+      tbl = '';   // 표 전체가 빈 경력용 → 삭제
+    } else if (nums.size) {
+      // 줄 단위 삭제 (중첩 표가 없는 줄만 대상)
+      tbl = tbl.replace(/<w:tr(?: [^>]*)?>(?:(?!<w:tbl>)[\s\S])*?<\/w:tr>/g, tr => _onlyBeyond(_careerNums(tr), keep) ? '' : tr);
+      if (!/<w:tr[ >]/.test(tbl)) tbl = '';
+    }
+    out.push(tbl);
+    i = end;
+    // 지운 표 바로 뒤의 빈 줄(문단)도 함께 지워 공백이 남지 않게
+    if (!tbl) {
+      const mp = body.slice(i).match(/^<w:p(?: [^>]*)?>(?:(?!<\/w:p>)[\s\S])*<\/w:p>|^<w:p(?: [^>]*)?\/>/);
+      if (mp && !/<w:t[ >]|<w:drawing|<w:pict/.test(mp[0])) i += mp[0].length;
+    }
+  }
+  zip.file(path, head + out.join('') + tail);
+}
+
+// 표에서 label 글자가 있는 칸 바로 오른쪽 칸이 비어 있으면 value를 넣음
+function _fillEmptyCellAfterLabel(zip, label, value) {
+  const path = 'word/document.xml';
+  let xml = zip.file(path)?.asText();
+  if (!xml || !value) return false;
+  const cellText = tc => (tc.match(/<w:t(?: [^>]*)?>[^<]*<\/w:t>/g) || []).map(t => t.replace(/<[^>]+>/g, '')).join('').replace(/\s/g, '');
+  let done = false;
+  xml = xml.replace(/<w:tr(?: [^>]*)?>[\s\S]*?<\/w:tr>/g, tr => {
+    if (done) return tr;
+    const cells = tr.match(/<w:tc(?: [^>]*)?>[\s\S]*?<\/w:tc>/g) || [];
+    const idx = cells.findIndex(c => cellText(c) === label);
+    if (idx < 0 || !cells[idx + 1] || cellText(cells[idx + 1])) return tr;
+    const next = cells[idx + 1];
+    const safe = String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // 칸의 첫 문단에 글자 run 추가 (문단 서식 유지)
+    const filled = next.replace(/(<w:p(?: [^>]*)?>(?:<w:pPr>[\s\S]*?<\/w:pPr>)?)/, `$1<w:r><w:t xml:space="preserve">${safe}</w:t></w:r>`);
+    if (filled === next) return tr;
+    done = true;
+    return tr.replace(next, filled);
+  });
+  if (done) zip.file(path, xml);
+  return done;
+}
+
+// 문서에서 "증명사진" 글자가 있는 표 칸을 찾아 그 칸 내용을 사진으로 교체
+function _insertPhotoIntoDocx(zip, jpegBytes) {
+  const docPath = 'word/document.xml', relPath = 'word/_rels/document.xml.rels', ctPath = '[Content_Types].xml';
+  let xml = zip.file(docPath)?.asText();
+  if (!xml) return false;
+
+  // 1) "증명사진"이 들어있는 <w:tc> 찾기 (글자가 여러 run으로 쪼개져 있어도 인식)
+  const tcRe = /<w:tc>[\s\S]*?<\/w:tc>|<w:tc [^>]*>[\s\S]*?<\/w:tc>/g;
+  let m, target = null;
+  while ((m = tcRe.exec(xml))) {
+    const text = (m[0].match(/<w:t(?: [^>]*)?>[^<]*<\/w:t>/g) || []).map(t => t.replace(/<[^>]+>/g, '')).join('').replace(/\s/g, '');
+    if (text.includes('증명사진')) { target = { start: m.index, xml: m[0] }; break; }
+  }
+  if (!target) return false;
+
+  // 2) 칸 너비에 맞춰 크기 계산 (최대 3cm × 4cm)
+  const tcPr = (target.xml.match(/<w:tcPr>[\s\S]*?<\/w:tcPr>/) || [''])[0];
+  const tcW = Number((tcPr.match(/<w:tcW [^>]*w:w="(\d+)"/) || [])[1]) || 0;   // twip
+  const MAX_W = 1080000;                                                     // 3cm (EMU)
+  const cx = tcW ? Math.min(MAX_W, Math.max(540000, (tcW - 220) * 635)) : MAX_W;
+  const cy = Math.round(cx * 4 / 3);
+
+  // 3) 이미지 파일·관계 추가
+  const rId = 'rIdApplicantPhoto';
+  zip.file('word/media/applicant_photo.jpg', jpegBytes);
+  let rels = zip.file(relPath).asText();
+  if (!rels.includes(`Id="${rId}"`)) {
+    rels = rels.replace('</Relationships>',
+      `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/applicant_photo.jpg"/></Relationships>`);
+    zip.file(relPath, rels);
+  }
+  let ct = zip.file(ctPath).asText();
+  if (!/Extension="jpg"/i.test(ct)) {
+    ct = ct.replace(/(<Types[^>]*>)/, '$1<Default Extension="jpg" ContentType="image/jpeg"/>');
+    zip.file(ctPath, ct);
+  }
+
+  // 4) 칸 내용 교체: 칸 속성(tcPr)은 유지, 글자 문단은 사진 문단 1개로
+  const drawing =
+    `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing>` +
+    `<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="90001" name="ApplicantPhoto"/>` +
+    `<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
+    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="applicant_photo.jpg"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>` +
+    `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+  const openTag = target.xml.match(/^<w:tc(?: [^>]*)?>/)[0];
+  let newTcPr = tcPr || '<w:tcPr></w:tcPr>';
+  newTcPr = /<w:vAlign /.test(newTcPr) ? newTcPr.replace(/<w:vAlign [^>]*\/>/, '<w:vAlign w:val="center"/>') : newTcPr.replace('</w:tcPr>', '<w:vAlign w:val="center"/></w:tcPr>');
+  const newTc = openTag + newTcPr + drawing + '</w:tc>';
+  xml = xml.slice(0, target.start) + newTc + xml.slice(target.start + target.xml.length);
+
+  // 5) 필요한 네임스페이스(wp, r) 선언 보장
+  xml = xml.replace(/<w:document([^>]*)>/, (all, attrs) => {
+    let a = attrs;
+    if (!/xmlns:wp=/.test(a)) a += ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"';
+    if (!/xmlns:r=/.test(a)) a += ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+    return `<w:document${a}>`;
+  });
+  zip.file(docPath, xml);
+  return true;
+}
+
 async function downloadResume(appId) {
   // 자사양식(Word) 이력서 다운로드는 슈퍼관리자만 (개인정보 유출 최소화)
   if (adminProfile?.role !== 'superadmin') { showToast('자사 이력서 다운로드는 슈퍼관리자만 가능합니다'); return; }
@@ -4883,11 +5050,12 @@ async function downloadResume(appId) {
       return r ? fmtCareerMonths(r[1] - r[0] + 1) : '';
     };
 
-    // 경력 데이터 (최대 6개)
+    // 경력 데이터 (최대 6개) — "신입/경력 없음" 항목은 제외
+    const realCareers = (careers||[]).filter(c => !c.is_no_experience);
     const careerData = {};
     for (let i = 0; i < 6; i++) {
       const n = i + 1;
-      const c = (careers||[])[i] || {};
+      const c = realCareers[i] || {};
       const period = c.start_month && (c.end_month || c.is_current)
         ? `${c.start_month} ~ ${c.is_current ? '현재' : c.end_month}` : '';
       careerData[`경력${n}기간`] = period;
@@ -4899,7 +5067,7 @@ async function downloadResume(appId) {
       careerData[`경력${n}연봉`] = c.final_salary || '';
       careerData[`경력${n}주요업무`] = '';        // 빈칸
       careerData[`경력${n}수행내역`] = c.description || c.achievement || '';
-      careerData[`경력${n}이직사유`] = c.reason_for_leaving || '';
+      careerData[`경력${n}이직사유`] = c.leave_reason || c.reason_for_leaving || '';   // DB 컬럼명: leave_reason
     }
 
     const data = {
@@ -4910,7 +5078,7 @@ async function downloadResume(appId) {
       희망연봉: app.desired_salary || '',
       이름: app.name || '',
       영문이름: app.name_en || '',
-      국적: app.nationality || '대한민국',
+      국적: (app.nationality || '').trim() || '대한민국',
       성별: app.gender || '',
       생년월일: app.birth_date || '',
       나이: age ? `만 ${age}세` : '',
@@ -4952,6 +5120,8 @@ async function downloadResume(appId) {
 
     // docxtemplater로 데이터 채우기
     const zip = new PizZip(arrayBuffer);
+    // 경력이 없는 빈 줄·빈 경력상세 표는 미리 지움 (경력 1개면 1줄만 남김)
+    try { _trimEmptyCareerBlocks(zip, Math.max(1, realCareers.length)); } catch(e) { console.warn('빈 경력 칸 정리 실패:', e); }
     const doc = new window.docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
@@ -4968,6 +5138,18 @@ async function downloadResume(appId) {
 
     doc.setData(data);
     doc.render();
+
+    // 국적 칸이 비어 있으면 "대한민국" (양식에 국적 태그가 없어도 채움)
+    try { _fillEmptyCellAfterLabel(doc.getZip(), '국적', (app.nationality || '').trim() || '대한민국'); } catch(e) {}
+
+    // 증명사진 넣기 (템플릿의 "증명사진" 칸에 3×4 비율로) — 실패해도 지원서는 그대로 다운로드
+    if (app.photo_url) {
+      try {
+        const photoUrl = await afUrl(app.photo_url);
+        const jpeg = photoUrl ? await _prepResumePhotoJpeg(photoUrl) : null;
+        if (jpeg && !_insertPhotoIntoDocx(doc.getZip(), jpeg)) console.warn('증명사진 칸을 찾지 못했습니다');
+      } catch(e) { console.warn('증명사진 넣기 실패:', e); }
+    }
 
     const blob = doc.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
     const date = today.toLocaleDateString('ko-KR').replace(/\./g,'').replace(/ /g,'');
