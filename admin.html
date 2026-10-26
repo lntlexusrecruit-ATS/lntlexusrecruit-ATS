@@ -902,6 +902,7 @@ function safeUrl(u) {
         <div style="font-size:12px;color:var(--text3)" id="mJobTitle">-</div>
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-sm" id="btnOfferMail" style="display:none;background:#EAF3DE;color:#27500A;border-color:#C5DFA8;font-weight:600" onclick="openOfferMailForm()">✉️ 입사 안내 메일</button>
         <button class="btn btn-sm pc-only" id="btnDownloadResume" onclick="downloadResume()">📄 지원서</button>
         <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
@@ -2649,11 +2650,224 @@ async function notifyScheduleNeeded(jobId, applicantName, jobTitle, round) {
   } catch(e) { console.log('일정 요청 알림 실패:', e); }
 }
 
+// 최종합격자 + 슈퍼어드민일 때만 "입사 안내 메일" 버튼 표시
+function _syncOfferMailBtn(stage) {
+  const b = document.getElementById('btnOfferMail');
+  if (b) b.style.display = (stage === '최종합격' && adminProfile?.role === 'superadmin') ? '' : 'none';
+}
+
 function updateModalStage(stage) {
+  _syncOfferMailBtn(stage);
   const stageInfo = PIPELINE.find(p => p.key === stage) || PIPELINE[0];
   document.getElementById('mCurrentStage').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${stage}</span>`;
   document.getElementById('mBadges').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${stage}</span>`;
   renderRejectReasons(allApps.find(a => a.id === currentAppId));
+}
+
+// ── 최종합격자 입사 안내 메일 ─────────────────────────────────
+// 방법 1 (기본): 첨부파일까지 들어간 메일 파일(.eml) 생성 → 열면 Outlook 새 메일 창 → [보내기]
+// 방법 2: Outlook 웹 작성창 열기 (웹은 첨부 자동 불가 → 구비서류 PDF 직접 첨부)
+// 구비서류 PDF: GitHub 저장소 최상위에 onboarding-docs.pdf 로 업로드 (빈 양식, 개인정보 없음)
+const OFFER_MAIL_CC = [
+  'HYUNJUN KIM <hjkim3@lexuslnt.com>',
+  'JAEHYOUNG CHO <jhcho@lexuslnt.com>',
+  'JEYONG LEE <jylee3@lexuslnt.com>',
+  'JIWOON MA <jwma@lexuslnt.com>',
+];
+const OFFER_MAIL_PDF = { url: 'onboarding-docs.pdf', name: '입사구비서류.pdf' };
+const OFFER_MAIL_DEFAULTS = {
+  dept: '엘앤티렉서스 영업부문 SC',
+  time: '09:00',
+  place: '서울시 강남구 영동대로 312 엘앤티렉서스 4층',
+  contact: ''
+};
+function _offerMailSaved() {
+  try { return { ...OFFER_MAIL_DEFAULTS, ...JSON.parse(localStorage.getItem('offerMailDefaults2') || '{}') }; }
+  catch(e) { return { ...OFFER_MAIL_DEFAULTS }; }
+}
+function _fmtKoFullDate(ymd) {
+  const d = new Date(ymd + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return ymd;
+  const days = ['일','월','화','수','목','금','토'];
+  return `${d.getUTCFullYear()}년 ${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${days[d.getUTCDay()]})`;
+}
+function _fmtKoTime(hm) {
+  if (!hm) return '';
+  const [h, m] = hm.split(':').map(Number);
+  return `${h < 12 ? '오전' : '오후'} ${h <= 12 ? h : h - 12}시${m ? ' ' + m + '분' : ''}`;
+}
+
+function openOfferMailForm() {
+  const app = allApps.find(a => a.id === currentAppId);
+  if (!app) return;
+  if (!app.email) { alert('지원자 이메일 주소가 없습니다.'); return; }
+  const v = _offerMailSaved();
+  document.getElementById('offerMailOverlay')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'offerMailOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px';
+  const fld = 'width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:8px;font-size:14px;font-family:inherit;margin:4px 0 12px;background:var(--surface);color:var(--text)';
+  const lbl = 'font-size:12px;font-weight:600;color:var(--text2)';
+  ov.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;width:100%;max-width:540px;max-height:92vh;overflow-y:auto;padding:22px 22px 18px;box-shadow:0 10px 40px rgba(0,0,0,.2)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:17px;font-weight:700">✉️ 입사 안내 메일</div>
+        <button class="modal-close" onclick="document.getElementById('offerMailOverlay').remove()">✕</button>
+      </div>
+      <div style="font-size:12px;color:var(--text2);background:var(--surface2);border-radius:8px;padding:9px 11px;margin-bottom:16px;line-height:1.7">
+        <b>받는 사람</b> ${esc(app.name)} &lt;${esc(app.email)}&gt;<br>
+        <b>참조</b> ${OFFER_MAIL_CC.map(c => esc(c.replace(/\s*<.*$/, ''))).join(', ')}<br>
+        <b>첨부</b> 📎 ${esc(OFFER_MAIL_PDF.name)}
+      </div>
+      <label style="${lbl}">포지션</label><input type="text" id="omPos" style="${fld}">
+      <div style="display:flex;gap:10px">
+        <div style="flex:3"><label style="${lbl}">입사일자 *</label><input type="date" id="omDate" style="${fld}"></div>
+        <div style="flex:2"><label style="${lbl}">시간</label><input type="time" id="omTime" style="${fld}"></div>
+      </div>
+      <label style="${lbl}">배치</label><input type="text" id="omDept" style="${fld}">
+      <label style="${lbl}">출근장소</label><input type="text" id="omPlace" style="${fld}">
+      <label style="${lbl}">연락처 (본문 맨 아래, 선택)</label><input type="text" id="omContact" placeholder="예: Tel. 02-2188-3565 / shkim2@lexuslnt.com" style="${fld}">
+      <div style="font-size:11px;color:var(--text3);margin:-4px 0 14px;line-height:1.5">배치·시간·출근장소·연락처는 다음에도 자동으로 채워집니다.</div>
+      <button class="btn btn-primary btn-sm" style="width:100%;padding:11px;font-size:14px" onclick="downloadOfferMailEml()">📎 메일 파일 만들기 (첨부 포함)</button>
+      <div style="font-size:11px;color:var(--text3);margin:6px 0 12px;line-height:1.5;text-align:center">다운로드된 파일을 열면 Outlook 새 메일 창이 뜹니다 → 확인 후 [보내기]</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" style="flex:1;padding:9px" onclick="openOfferMailOutlook()">Outlook 웹으로 열기<br><span style="font-size:10px;color:var(--text3)">PDF는 직접 첨부</span></button>
+        <button class="btn btn-sm" style="flex:1;padding:9px" onclick="copyOfferMail()">📋 본문 복사<br><span style="font-size:10px;color:var(--text3)">받는 사람·참조·제목 포함</span></button>
+      </div>
+    </div>`;
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  // value로 채워서 특수문자 안전
+  document.getElementById('omPos').value = app.job_postings?.title || '';
+  document.getElementById('omTime').value = v.time || '09:00';
+  document.getElementById('omDept').value = v.dept || '';
+  document.getElementById('omPlace').value = v.place || '';
+  document.getElementById('omContact').value = v.contact || '';
+  document.getElementById('omDate').focus();
+}
+
+function _buildOfferMail() {
+  const app = allApps.find(a => a.id === currentAppId);
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const date = g('omDate');
+  if (!date) { showToast('입사일자를 선택하세요'); document.getElementById('omDate')?.focus(); return null; }
+  const vals = { dept: g('omDept'), time: g('omTime'), place: g('omPlace'), contact: g('omContact') };
+  try { localStorage.setItem('offerMailDefaults2', JSON.stringify(vals)); } catch(e) {}
+  const pos = g('omPos');
+  const lines = [
+    `안녕하세요.`,
+    `엘앤티렉서스 인사총무팀 김순형대리입니다.😊`,
+    ``,
+    `당사 [ ${pos} ] 포지션 최종합격을 진심으로 축하드립니다.`,
+    `입사 관련 안내 및 준비사항에 대해 안내 드립니다.`,
+    ``,
+    `*    입사 안내사항      –`,
+    ``,
+    `1. 배치 : ${vals.dept}`,
+    `2. 입사일자 : ${_fmtKoFullDate(date)}`,
+    `3. 시간 : ${_fmtKoTime(vals.time || '09:00')}`,
+    `4. 출근장소 : ${vals.place}`,
+    `5. 구비서류 : 첨부파일 참고`,
+    ``,
+    `* 신입사원 OT 교육 후 부서 배치 예정입니다.`,
+    ``,
+    `문의사항이 있으시면 아래 번호 또는 이메일로 연락 부탁드립니다.`,
+    `다시 한번 입사를 진심으로 축하드립니다🎉`,
+    ``,
+    `감사합니다.`,
+    `엘앤티렉서스 인사총무팀 드림`,
+  ];
+  if (vals.contact) lines.push(vals.contact);
+  return {
+    app, date,
+    to: app.email,
+    cc: OFFER_MAIL_CC,
+    subject: '[엘앤티렉서스(주)] 최종합격 / 입사일정 안내 및 입사구비서류 송부',
+    body: lines.join('\n')
+  };
+}
+
+// UTF-8 → base64 (76자 줄바꿈)
+function _b64utf8(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = ''; bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin);
+}
+function _wrap76(s) { return s.replace(/.{1,76}/g, '$&\r\n').trimEnd(); }
+function _mimeWord(str) { return '=?UTF-8?B?' + _b64utf8(str) + '?='; }
+
+async function downloadOfferMailEml() {
+  const m = _buildOfferMail();
+  if (!m) return;
+  // 구비서류 PDF 불러오기
+  let pdfB64 = '';
+  try {
+    const res = await fetch(OFFER_MAIL_PDF.url, { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    let bin = ''; for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+    pdfB64 = btoa(bin);
+  } catch(e) {
+    if (!confirm('구비서류 PDF(onboarding-docs.pdf)를 불러오지 못했습니다.\n첨부 없이 메일 파일을 만들까요? (PDF는 Outlook에서 직접 첨부)')) return;
+  }
+  const B = 'LNT_' + Math.random().toString(36).slice(2);
+  const parts = [
+    'X-Unsent: 1',
+    'To: ' + m.to,
+    'Cc: ' + m.cc.join(', '),
+    'Subject: ' + _mimeWord(m.subject),
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${B}"`,
+    '',
+    '--' + B,
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    _wrap76(_b64utf8(m.body.replace(/\n/g, '\r\n'))),
+  ];
+  if (pdfB64) {
+    const fn = _mimeWord(OFFER_MAIL_PDF.name);
+    parts.push('--' + B,
+      `Content-Type: application/pdf; name="${fn}"`,
+      `Content-Disposition: attachment; filename="${fn}"`,
+      'Content-Transfer-Encoding: base64',
+      '',
+      _wrap76(pdfB64));
+  }
+  parts.push('--' + B + '--', '');
+  const blob = new Blob([parts.join('\r\n')], { type: 'message/rfc822' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `LNT_offer_${m.date.replace(/-/g, '')}.eml`; // 한글 파일명은 일부 브라우저에서 'download'로 바뀌어 영문 사용
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  try { logAudit(`입사 안내 메일 작성(입사일 ${m.date})`, 'application', m.app.id, m.app.name); } catch(e) {}
+  document.getElementById('offerMailOverlay')?.remove();
+  showToast('📎 메일 파일을 받았습니다 — 파일을 열면 Outlook 새 메일 창이 뜹니다');
+}
+
+function openOfferMailOutlook() {
+  const m = _buildOfferMail();
+  if (!m) return;
+  const ccEmails = m.cc.map(c => (c.match(/<([^>]+)>/) || [, c])[1]).join(',');
+  const url = 'https://outlook.office.com/mail/deeplink/compose'
+    + '?to=' + encodeURIComponent(m.to)
+    + '&cc=' + encodeURIComponent(ccEmails)
+    + '&subject=' + encodeURIComponent(m.subject)
+    + '&body=' + encodeURIComponent(m.body);
+  window.open(url, '_blank', 'noopener');
+  try { logAudit(`입사 안내 메일 작성(입사일 ${m.date})`, 'application', m.app.id, m.app.name); } catch(e) {}
+  document.getElementById('offerMailOverlay')?.remove();
+  showToast('✉️ Outlook 웹 작성창을 열었습니다 — 구비서류 PDF 첨부 후 [보내기]');
+}
+
+async function copyOfferMail() {
+  const m = _buildOfferMail();
+  if (!m) return;
+  try {
+    await navigator.clipboard.writeText(`받는 사람: ${m.to}\n참조: ${m.cc.join('; ')}\n제목: ${m.subject}\n\n${m.body}`);
+    showToast('📋 받는 사람·참조·제목·본문을 복사했습니다');
+  } catch(e) { alert('복사에 실패했습니다. 브라우저 권한을 확인해 주세요.'); }
 }
 
 // ── 확인 팝업 ────────────────────────────────────────────
@@ -2678,6 +2892,7 @@ async function openModal(id) {
   const app = allApps.find(a => a.id === id);
   if (!app) return;
   logAudit('지원자 열람', 'application', id, app.name);
+  _syncOfferMailBtn(app.stage);
   const ac = AV_COLORS[0];
   const stageInfo = PIPELINE.find(p => p.key === (app.stage||'지원완료')) || PIPELINE[0];
   document.getElementById('mName').textContent = app.name||'이름없음';
