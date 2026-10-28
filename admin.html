@@ -215,6 +215,11 @@ body{font-family:'Pretendard',-apple-system,sans-serif;background:var(--bg);colo
 .iv-badge.ok{background:#EAF3DE;color:#27500A}
 .iv-badge.pending{background:#F1EFE8;color:#555}
 .iv-badge.mine-pending{background:#FEF3E2;color:#7A3D00;border:1px solid #F5CFA0}
+.iv-badge.ng{background:#FCEBEB;color:#A32D2D}
+.iv-badge.decide{background:#3C3489;color:#fff}
+.rn-tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;margin-top:6px;white-space:nowrap}
+.rn-wait{background:#FEF3E2;color:#7A3D00}.rn-sent{background:#E6F1FB;color:#0C447C}.rn-ok{background:#EAF3DE;color:#27500A}.rn-fail{background:#FCEBEB;color:#A32D2D}.rn-manual{background:#F1EFE8;color:#5F5E5A}
+.rn-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;margin-bottom:12px;background:#FEF3E2;border:1px solid #F5CFA0;border-radius:var(--rsm);font-size:14px;color:#5A2D00}
 /* 통계 */
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
 .stat-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:18px}
@@ -704,6 +709,8 @@ function safeUrl(u) {
             <input class="search-input" id="searchInput" placeholder="이름, 이메일로 검색..." oninput="renderPipeline()">
             <select class="filter-select" id="jobFilter" onchange="renderPipeline()"><option value="">전체 공고</option></select>
           </div>
+          <!-- 면접 불합격 통보 대기 (슈퍼어드민) -->
+          <div id="rejectNotifyBar" class="hidden"></div>
           <!-- 칸반 파이프라인 -->
           <div class="pipeline-wrap" id="pipelineWrap"></div>
         </div>
@@ -925,9 +932,10 @@ function safeUrl(u) {
 
       <!-- 합격/불합격 버튼 -->
       <div class="decision-bar">
-        <button class="btn btn-pass" onclick="passApplicant()">✓ 합격</button>
-        <button class="btn btn-fail" onclick="failApplicant()">✕ 불합격</button>
+        <button class="btn btn-pass" id="mPassBtn" onclick="passApplicant()">✓ 합격</button>
+        <button class="btn btn-fail" id="mFailBtn" onclick="failApplicant()">✕ 불합격</button>
       </div>
+      <div id="mIvOpinions" class="hidden" style="margin-top:10px;padding:10px 14px;background:var(--surface2);border-radius:8px"></div>
       <div id="mRejectReasons" class="hidden" style="margin-top:10px;padding:10px 14px;background:var(--r50);border-radius:8px;font-size:13px;color:var(--r600);line-height:1.6"></div>
 
       <div style="height:16px"></div>
@@ -980,6 +988,28 @@ function safeUrl(u) {
     <div class="confirm-btns">
       <button class="btn btn-primary" id="confirmYes" onclick="confirmAction(true)">예</button>
       <button class="btn" id="confirmNo" onclick="confirmAction(false)">아니요</button>
+    </div>
+  </div>
+</div>
+
+<!-- 면접 의견 / 슈퍼어드민 확정 -->
+<div id="ivDecideModal" class="confirm-modal hidden">
+  <div class="confirm-inner" style="width:420px;max-width:calc(100vw - 32px);text-align:left">
+    <div class="confirm-title" id="ivDecideTitle" style="text-align:center"></div>
+    <div id="ivDecideBody" style="font-size:13px;color:var(--text2);line-height:1.6;margin:8px 0 18px"></div>
+    <div class="confirm-btns" id="ivDecideBtns"></div>
+  </div>
+</div>
+
+<!-- 면접 불합격 통보 (카카오톡) -->
+<div id="rejectNotifyModal" class="confirm-modal hidden">
+  <div class="confirm-inner" style="width:580px;max-width:calc(100vw - 32px);max-height:86vh;overflow:auto;text-align:left">
+    <div class="confirm-title" style="text-align:center">면접 불합격 통보 (카카오톡)</div>
+    <div id="rnBody" style="margin-top:10px"></div>
+    <div class="confirm-btns" style="margin-top:16px">
+      <button class="btn" onclick="rnRefresh()">↻ 수신 결과 확인</button>
+      <button class="btn btn-primary" id="rnSendBtn" onclick="rnSend()">선택 발송</button>
+      <button class="btn" onclick="closeRejectNotify()">닫기</button>
     </div>
   </div>
 </div>
@@ -1992,8 +2022,8 @@ async function loadApplications() {
   allApps = data || [];
   // 면접관 승인 캐시 로드 (파이프라인 카드 배지용)
   const [{ data: ivApprovals }, { data: iv2Approvals }] = await Promise.all([
-    sb.from('interview_approvals').select('application_id, admin_id, admin_profiles(name)'),
-    sb.from('interview_approvals_2nd').select('application_id, admin_id, admin_profiles(name)')
+    sb.from('interview_approvals').select('*, admin_profiles(name)'),
+    sb.from('interview_approvals_2nd').select('*, admin_profiles(name)')
   ]);
   window._cachedApprovals = ivApprovals || [];
   window._cachedApprovals2nd = iv2Approvals || [];
@@ -2038,8 +2068,8 @@ async function loadDashboard() {
   const myId = currentAdmin.id;
   const jobs = allJobs.filter(j => j.is_active);
 
-  // 면접관 승인 현황 — DB에서 직접 로드 (캐시 불일치 방지)
-  const { data: allApprovals } = await sb.from('interview_approvals').select('application_id, admin_id, admin_profiles(name)');
+  // 면접관 의견 현황 — DB에서 직접 로드 (캐시 불일치 방지)
+  const { data: allApprovals } = await sb.from('interview_approvals').select('*, admin_profiles(name)');
   // _jobInterviewers1st 없으면 직접 로드
   let allInterviewers = window._jobInterviewers1st || [];
   if (!allInterviewers.length && jobs.length) {
@@ -2096,7 +2126,7 @@ async function loadDashboard() {
           <div class="job-dash-stat-label">최종합격</div>
         </div>
       </div>
-      ${myPendingCount > 0 ? `<div style="margin-top:14px;padding:10px 14px;background:#FEF3E2;border-radius:var(--rxs);font-size:14px;color:#5A2D00;font-weight:700;border:1.5px solid #F5CFA0">⚠ 내 면접 승인 대기: ${myPendingCount}명</div>` : ''}
+      ${myPendingCount > 0 ? `<div style="margin-top:14px;padding:10px 14px;background:#FEF3E2;border-radius:var(--rxs);font-size:14px;color:#5A2D00;font-weight:700;border:1.5px solid #F5CFA0">⚠ 내 면접 의견 대기: ${myPendingCount}명</div>` : ''}
       ${jInterviewers.length > 0 ? renderInterviewerBadgesSummary(j.id, jobApps, jInterviewers, allApprovals||[]) : ''}
     </div>`;
   }).join('');
@@ -2121,7 +2151,7 @@ function renderInterviewerBadgesSummary(jobId, jobApps, interviewers, allApprova
     </span>`;
   }).join('');
 
-  return `<div style="margin-top:12px;font-size:12px;color:#444;font-weight:600;margin-bottom:5px">면접관 승인 현황</div>
+  return `<div style="margin-top:12px;font-size:12px;color:#444;font-weight:600;margin-bottom:5px">면접관 의견 현황</div>
     <div class="interviewer-badges">${summary}</div>`;
 }
 
@@ -2153,33 +2183,20 @@ function renderPipeline() {
           ${stageApps.length ? stageApps.map((a,i) => {
             const ac = AV_COLORS[i%AV_COLORS.length];
             const date = a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('ko-KR',{month:'short',day:'numeric'}) : '';
-            // 1차/2차면접 단계: 면접관 승인 현황 배지
+            // 1차/2차면접 단계: 면접관 의견 배지 (✅ 합격 / ❌ 불합격 / ⬜ 대기)
             let ivBadges = '';
-            if (stage.key === '1차면접') {
-              const jobIvs = interviewers.filter(iv => iv.job_id === a.job_posting_id);
+            if (stage.key === '1차면접' || stage.key === '2차면접') {
+              const is2 = stage.key === '2차면접';
+              const jobIvs = (is2 ? (window._cachedInterviewers2nd || []) : interviewers).filter(iv => iv.job_id === a.job_posting_id);
               if (jobIvs.length) {
-                const appApprovals = approvals.filter(ap => ap.application_id === a.id).map(ap => ap.admin_id);
-                ivBadges = `<div class="interviewer-badges" style="margin-top:6px">${
-                  jobIvs.map(iv => {
-                    const ok = appApprovals.includes(iv.admin_id);
-                    const isMe = iv.admin_id === currentAdmin.id;
-                    return `<span class="iv-badge ${ok?'ok':isMe?'mine-pending':'pending'}">${ok?'✅':isMe?'⚠':'⬜'} ${esc(iv.admin_profiles?.name)||'-'}</span>`;
-                  }).join('')
-                }</div>`;
-              }
-            } else if (stage.key === '2차면접') {
-              const jobIvs2nd = (window._cachedInterviewers2nd||[]).filter(iv => iv.job_id === a.job_posting_id);
-              if (jobIvs2nd.length) {
-                const appApprovals2nd = (window._cachedApprovals2nd||[]).filter(ap => ap.application_id === a.id).map(ap => ap.admin_id);
-                ivBadges = `<div class="interviewer-badges" style="margin-top:6px">${
-                  jobIvs2nd.map(iv => {
-                    const ok = appApprovals2nd.includes(iv.admin_id);
-                    const isMe = iv.admin_id === currentAdmin.id;
-                    return `<span class="iv-badge ${ok?'ok':isMe?'mine-pending':'pending'}">${ok?'✅':isMe?'⚠':'⬜'} ${esc(iv.admin_profiles?.name)||'-'}</span>`;
-                  }).join('')
-                }</div>`;
+                const ops = (is2 ? (window._cachedApprovals2nd || []) : approvals).filter(ap => ap.application_id === a.id);
+                const ob = _opinionBadges(jobIvs, ops);
+                const decideTag = (adminProfile?.role === 'superadmin' && ob.done >= jobIvs.length)
+                  ? `<span class="iv-badge decide">결정 대기</span>` : '';
+                ivBadges = `<div class="interviewer-badges" style="margin-top:6px">${ob.html}${decideTag}</div>`;
               }
             }
+            const rnTag = (stage.key === '불합격' && _isIvReject(a)) ? _rnTagHtml(a) : '';
             return `<div class="app-card" onclick="openModal('${a.id}')">
               <div class="app-card-top">
                 <div class="app-card-avatar" style="background:${ac.bg};color:${ac.color}">${esc((a.name||'?').slice(0,2))}</div>
@@ -2191,7 +2208,7 @@ function renderPipeline() {
               <div class="app-card-meta">
                 ${(a.apply_source||[]).map(s=>`<span class="app-card-tag">${esc(s)}</span>`).join('')}
               </div>
-              ${ivBadges}
+              ${ivBadges}${rnTag}
               <div class="app-card-date">${date}</div>
             </div>`;
           }).join('') : `<div style="text-align:center;padding:20px;font-size:12px;color:var(--text3)">지원자 없음</div>`}
@@ -2199,6 +2216,7 @@ function renderPipeline() {
       </div>
     `;
   }).join('');
+  renderRejectNotifyBar(apps);
   updateStats();
 }
 
@@ -2263,17 +2281,9 @@ async function passApplicant() {
       showToast('권한이 없습니다');
     }
 
-  } else if (stage === '1차면접') {
-    // 슈퍼어드민이면 면접관 전원OK 여부 확인 후 2차면접 팝업
-    if (role === 'superadmin') {
-      await handleInterviewApproval(currentAppId, app);
-    } else {
-      // 일반 관리자/면접관: 개별 승인만
-      await handleInterviewApproval(currentAppId, app);
-    }
-
-  } else if (stage === '2차면접') {
-    await handleInterviewApproval2nd(currentAppId, app);
+  } else if (stage === '1차면접' || stage === '2차면접') {
+    // 면접관: 합격 의견 / 슈퍼어드민: 면접관 전원 의견 확인 후 확정
+    await handleInterviewOpinion(currentAppId, app, stage === '2차면접' ? 2 : 1, 'pass');
 
   } else if (stage === '최종합격') {
     showToast('이미 최종합격 상태입니다');
@@ -2287,176 +2297,429 @@ async function passApplicant() {
   }
 }
 
-// 면접관 개별 승인 처리 (일반채용)
-async function handleInterviewApproval(appId, app) {
-  // 이 공고의 면접관 목록
-  const { data: interviewers } = await sb.from('job_interviewers')
-    .select('admin_id, admin_profiles(name)')
-    .eq('job_id', app.job_posting_id);
+// ── 면접 의견(합격/불합격) → 슈퍼어드민 최종 확정 ─────────────
+// 면접관: 합격/불합격 '의견'만 남김 (평가표 필수, 바꿀 수 있음)
+// 슈퍼어드민: 해당 라운드 면접관 전원이 의견을 남겨야 합격/불합격 확정 가능
+// 불합격 확정해도 카톡은 자동 발송 안 함 → 파이프라인 상단 [통보 관리]에서 발송
+var IV_OP = {
+  1: { iv: 'job_interviewers',     op: 'interview_approvals' },
+  2: { iv: 'job_interviewers_2nd', op: 'interview_approvals_2nd' },
+};
+function _opDecision(o) { return (o && o.decision === 'fail') ? 'fail' : 'pass'; }
 
+// 면접관별 의견 배지 → { html, done }
+function _opinionBadges(ivs, ops) {
+  let done = 0;
+  const html = ivs.map(iv => {
+    const o = ops.find(x => x.admin_id === iv.admin_id);
+    const isMe = iv.admin_id === currentAdmin?.id;
+    if (o) done++;
+    const d = o ? _opDecision(o) : null;
+    const cls = d === 'fail' ? 'ng' : d === 'pass' ? 'ok' : (isMe ? 'mine-pending' : 'pending');
+    const ic  = d === 'fail' ? '❌' : d === 'pass' ? '✅' : (isMe ? '⚠' : '⬜');
+    return `<span class="iv-badge ${cls}">${ic} ${esc(iv.admin_profiles?.name) || '-'}</span>`;
+  }).join('');
+  return { html, done };
+}
+
+// 지원자 상세: 합격/불합격 버튼 문구 (면접 단계에서 역할별로)
+function _syncDecisionLabels(stage) {
+  const p = document.getElementById('mPassBtn'), f = document.getElementById('mFailBtn');
+  if (!p || !f) return;
+  const iv = stage === '1차면접' || stage === '2차면접';
+  const sfx = !iv ? '' : (adminProfile?.role === 'superadmin' ? ' 확정' : ' 의견');
+  p.textContent = '✓ 합격' + sfx;
+  f.textContent = '✕ 불합격' + sfx;
+}
+
+// 지원자 상세: 면접관 의견 현황
+function _renderModalOpinions(app) {
+  const el = document.getElementById('mIvOpinions');
+  if (!el) return;
+  const stage = app?.stage;
+  const hide = () => { el.innerHTML = ''; el.classList.add('hidden'); };
+  if (!app || (stage !== '1차면접' && stage !== '2차면접')) return hide();
+  const is2 = stage === '2차면접';
+  const allIvs = is2 ? (window._cachedInterviewers2nd || [])
+                     : (window._jobInterviewers1st || window._cachedInterviewers || []);
+  const ivs = allIvs.filter(i => i.job_id === app.job_posting_id);
+  if (!ivs.length) return hide();
+  const allOps = is2 ? (window._cachedApprovals2nd || []) : (window._cachedApprovals || []);
+  const ob = _opinionBadges(ivs, allOps.filter(o => o.application_id === app.id));
+  const allIn = ob.done >= ivs.length;
+  el.innerHTML = `<div style="font-size:12px;color:var(--text2);margin-bottom:6px">${is2 ? 2 : 1}차 면접관 의견 <b>${ob.done}/${ivs.length}</b>${allIn ? ' · 전원 의견 완료' : ''}</div>
+    <div class="interviewer-badges">${ob.html}</div>`;
+  el.classList.remove('hidden');
+}
+
+function _ivModalClose() { document.getElementById('ivDecideModal').classList.add('hidden'); }
+function _ivModal(title, bodyHtml, buttons) {
+  document.getElementById('ivDecideTitle').textContent = title;
+  document.getElementById('ivDecideBody').innerHTML = bodyHtml;
+  const box = document.getElementById('ivDecideBtns');
+  box.innerHTML = '';
+  (buttons && buttons.length ? buttons : [{ label: '닫기' }]).forEach(b => {
+    const el = document.createElement('button');
+    el.className = 'btn ' + (b.cls || '');
+    el.textContent = b.label;
+    el.onclick = async () => { _ivModalClose(); if (b.onClick) await b.onClick(); };
+    box.appendChild(el);
+  });
+  document.getElementById('ivDecideModal').classList.remove('hidden');
+}
+function _ivOpinionLines(interviewers, ops) {
+  return interviewers.map(i => {
+    const o = ops.find(x => x.admin_id === i.admin_id);
+    const d = o ? _opDecision(o) : null;
+    const tag = d === 'pass' ? '<span class="iv-badge ok">✅ 합격</span>'
+              : d === 'fail' ? '<span class="iv-badge ng">❌ 불합격</span>'
+              : '<span class="iv-badge pending">⬜ 대기</span>';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border)">
+      <span style="font-size:14px;color:var(--text)">${esc(i.admin_profiles?.name) || '-'}${i.admin_id === currentAdmin?.id ? ' (나)' : ''}</span>
+      <span style="margin-left:auto">${tag}</span></div>`;
+  }).join('');
+}
+async function _loadOpinions(round, appId) {
+  const { data, error } = await sb.from(IV_OP[round].op).select('*').eq('application_id', appId);
+  if (error) { console.error('opinions load error', error); return null; }
+  return data || [];
+}
+async function _refreshOpinionCache() {
+  const [{ data: a1 }, { data: a2 }] = await Promise.all([
+    sb.from('interview_approvals').select('*, admin_profiles(name)'),
+    sb.from('interview_approvals_2nd').select('*, admin_profiles(name)')
+  ]);
+  window._cachedApprovals = a1 || [];
+  window._cachedApprovals2nd = a2 || [];
+}
+
+async function handleInterviewOpinion(appId, app, round, decision) {
+  const isSuper = adminProfile?.role === 'superadmin';
+  const label = decision === 'pass' ? '합격' : '불합격';
+  const { data: interviewers } = await sb.from(IV_OP[round].iv)
+    .select('admin_id, admin_profiles(name)').eq('job_id', app.job_posting_id);
+
+  // 면접관 미지정 → 슈퍼어드민만 바로 확정 가능
   if (!interviewers?.length) {
-    // 면접관 미지정 → 관리자가 바로 면접관검토로 넘김
-    showConfirm('면접관 미지정', '이 공고에 지정된 면접관이 없습니다. 바로 다음 단계로 진행할까요?', async (yes) => {
-      if (!yes) return;
-      await updateStageById(appId, '면접관검토');
-      showToast('✓ 면접관 검토 단계로 이동했습니다');
-      updateModalStage('면접관검토');
-    });
-    return;
-  }
-
-  // 현재 승인 현황
-  const { data: approvals } = await sb.from('interview_approvals')
-    .select('admin_id, admin_profiles(name)')
-    .eq('application_id', appId);
-  const approvedIds = (approvals||[]).map(a => a.admin_id);
-
-  // 내가 이미 승인했는지 확인
-  const myId = currentAdmin.id;
-  const iAmInterviewer = interviewers.some(i => i.admin_id === myId);
-
-  if (iAmInterviewer && !approvedIds.includes(myId)) {
-    // ★ 평가표 미작성 시 승인(합격) 불가
-    const myEval = await getMyEvaluation(appId, 1);
-    if (!myEval) {
-      showToast('⚠️ 면접 평가표를 먼저 작성해야 합격 처리할 수 있습니다');
-      alert('1차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 합격 처리해 주세요.');
+    if (!isSuper) {
+      showToast(`${round}차 면접관이 지정되지 않았습니다. 슈퍼어드민에게 문의하세요`);
       window._evalGuardBlocked = true;
       return;
     }
-    // 내 승인 추가
-    await sb.from('interview_approvals').insert({ application_id: appId, admin_id: myId });
-    approvedIds.push(myId);
-    // DB에서 최신 승인 데이터 다시 로드 (캐시 완전 동기화)
-    const { data: freshApprovals } = await sb.from('interview_approvals')
-      .select('application_id, admin_id, admin_profiles(name)');
-    window._cachedApprovals = freshApprovals || [];
-    renderPipeline();
-    await loadDashboard();
+    _ivFinalConfirm(appId, app, round, decision, '<div style="color:var(--text3)">지정된 면접관이 없습니다.</div>');
+    return;
+  }
+
+  const myId = currentAdmin.id;
+  const iAmInterviewer = interviewers.some(i => i.admin_id === myId);
+  if (!iAmInterviewer && !isSuper) {
+    showToast(`${round}차 면접관 또는 슈퍼어드민만 처리할 수 있습니다`);
+    window._evalGuardBlocked = true;
+    return;
+  }
+
+  let ops = await _loadOpinions(round, appId);
+  if (!ops) { showToast('면접관 의견을 불러오지 못했습니다'); window._evalGuardBlocked = true; return; }
+
+  // 1) 면접관이면 내 의견 저장(또는 변경) — 평가표 필수
+  if (iAmInterviewer) {
+    const mine = ops.find(o => o.admin_id === myId);
+    if (!mine || _opDecision(mine) !== decision) {
+      const myEval = await getMyEvaluation(appId, round);
+      if (!myEval) {
+        showToast(`⚠️ 면접 평가표를 먼저 작성해야 ${label} 의견을 남길 수 있습니다`);
+        alert(`${round}차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 다시 눌러 주세요.`);
+        window._evalGuardBlocked = true;
+        return;
+      }
+      const tbl = IV_OP[round].op;
+      const q = mine
+        ? sb.from(tbl).update({ decision }).eq('application_id', appId).eq('admin_id', myId).select('admin_id')
+        : sb.from(tbl).insert({ application_id: appId, admin_id: myId, decision }).select('admin_id');
+      const { data: saved, error } = await q;
+      if (error || !saved?.length) {
+        console.error('opinion save failed', error);
+        showToast('⛔ 의견이 저장되지 않았습니다');
+        alert('면접 의견 저장에 실패했습니다.\n\n' + (error?.message || 'DB 권한(정책)을 확인해 주세요.'));
+        window._evalGuardBlocked = true;
+        return;
+      }
+      logAudit(`면접 의견(${round}차 ${label})`, 'application', appId, app.name);
+      ops = (await _loadOpinions(round, appId)) || ops;
+      await _refreshOpinionCache();
+      renderPipeline();
+      if (currentAppId === appId) _renderModalOpinions(allApps.find(a => a.id === appId));
+    }
   }
 
   const total = interviewers.length;
-  const done = approvedIds.length;
+  const done = interviewers.filter(i => ops.some(o => o.admin_id === i.admin_id)).length;
+  const lines = _ivOpinionLines(interviewers, ops);
 
-  // 승인 현황 표시
-  const statusLines = interviewers.map(i => {
-    const ok = approvedIds.includes(i.admin_id);
-    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border)">
-      <span style="font-size:16px">${ok ? '✅' : '⬜'}</span>
-      <span style="font-size:13px">${esc(i.admin_profiles?.name) || '-'}</span>
-      <span style="font-size:11px;color:${ok?'var(--g600)':'var(--text3)'};margin-left:auto">${ok?'승인':'대기'}</span>
-    </div>`;
-  }).join('');
+  // 2) 면접관(슈퍼어드민 아님): 의견만 남기고 끝
+  if (!isSuper) {
+    _ivModal(`${round}차 면접 의견 (${done}/${total})`,
+      `<div style="margin-bottom:10px;color:var(--text)">내 의견: <b>${label}</b><br><span style="font-size:12px;color:var(--text3)">최종 합격·불합격은 슈퍼어드민이 결정합니다. 의견은 다시 눌러 바꿀 수 있습니다.</span></div>${lines}`,
+      [{ label: '닫기' }]);
+    showToast(`✓ ${label} 의견을 남겼습니다`);
+    return;
+  }
 
-  if (done >= total) {
-    // 전원 승인 완료 → 슈퍼어드민이면 바로 2차면접 여부 팝업, 아니면 알림만
-    if (adminProfile?.role === 'superadmin') {
-      showConfirm('면접관 전원 승인 완료 ✅', '2차 면접이 필요한 지원자인가요?', async (yes) => {
-        if (yes) {
-          await updateStageById(appId, '2차면접');
-          showToast('✓ 2차면접으로 이동했습니다');
-          updateModalStage('2차면접');
-        } else {
-          await updateStageById(appId, '최종합격');
-          showToast('🎉 최종합격 처리되었습니다');
-          updateModalStage('최종합격');
-        }
-      });
-    } else {
-      showToast('✓ 면접관 전원 승인 완료! 슈퍼어드민이 최종 결정합니다');
-    }
-  } else {
-    // 아직 미승인자 있음 → 현황 표시
-    showConfirm(`면접관 승인 현황 (${done}/${total})`, '', null);
-    document.getElementById('confirmSub').innerHTML = `<div style="margin-top:8px">${statusLines}</div><div style="margin-top:12px;font-size:12px;color:var(--text3)">전원 승인 시 자동으로 다음 단계로 이동합니다</div>`;
-    document.getElementById('confirmYes').style.display = 'none';
-    document.getElementById('confirmNo').textContent = '닫기';
-    document.getElementById('confirmNo').onclick = () => { closeConfirmModal(); };
-    if (iAmInterviewer) showToast('✓ 승인 완료했습니다');
+  // 3) 슈퍼어드민: 면접관 전원 의견이 있어야 확정
+  if (done < total) {
+    _ivModal(`면접관 의견 대기 (${done}/${total})`,
+      `${lines}<div style="margin-top:12px;font-size:12.5px;color:var(--r600)">면접관 전원이 의견을 남겨야 확정할 수 있습니다.</div>`,
+      [{ label: '닫기' }]);
+    window._evalGuardBlocked = true;
+    return;
+  }
+  _ivFinalConfirm(appId, app, round, decision, lines);
+}
+
+// 확정 후 화면 갱신 (면접 진행 화면이면 목록으로 복귀)
+async function _afterFinalDecision() {
+  await loadApplications();
+  await loadDashboard();
+  const sess = document.getElementById('pageInterviewSession');
+  if (sess && !sess.classList.contains('hidden')) {
+    showPage('interviewroom', null);
+    await loadInterviewRoom();
   }
 }
 
-// 2차면접 면접관 승인 처리
-async function handleInterviewApproval2nd(appId, app) {
-  const { data: interviewers } = await sb.from('job_interviewers_2nd')
-    .select('admin_id, admin_profiles(name)')
-    .eq('job_id', app.job_posting_id);
+function _ivFinalConfirm(appId, app, round, decision, linesHtml) {
+  window._evalGuardBlocked = true; // 확정 창에서 결정 → 화면 갱신은 확정 후에
+  const name = app.name || '지원자';
+  const moveTo = async (stage, toastMsg) => {
+    if (!(await updateStageById(appId, stage))) return;
+    logAudit(`${round}차 면접 ${stage === '불합격' ? '불합격' : '합격'} 확정(→${stage})`, 'application', appId, app.name);
+    showToast(toastMsg);
+    if (currentAppId === appId) updateModalStage(stage);
+    await _afterFinalDecision();
+  };
 
-  if (!interviewers?.length) {
-    // 2차 면접관 미지정 → 슈퍼어드민이면 바로 최종합격
-    if (adminProfile?.role === 'superadmin') {
-      showConfirm('2차면접 면접관 미지정', '지정된 2차 면접관이 없습니다. 최종합격 처리하시겠습니까?', async (yes) => {
-        if (!yes) return;
-        await updateStageById(appId, '최종합격');
-        showToast('🎉 최종합격 처리되었습니다');
-        updateModalStage('최종합격');
-      });
-    } else {
-      showToast('2차 면접관이 지정되지 않았습니다. 슈퍼어드민에게 문의하세요');
-    }
+  if (decision === 'fail') {
+    _ivModal(`${name} 불합격 확정`,
+      `${linesHtml}
+       <div style="margin-top:12px;color:var(--text)">${round}차 면접 불합격으로 확정합니다.</div>
+       <div style="margin-top:4px;font-size:12px;color:var(--text3)">카카오톡은 자동으로 가지 않습니다. 파이프라인 상단 [통보 관리]에서 발송하세요.</div>`,
+      [{ label: '불합격 확정', cls: 'btn-fail', onClick: () => moveTo('불합격', '불합격 확정 — 통보 대기 목록에 추가됐습니다') },
+       { label: '취소' }]);
     return;
   }
-
-  const { data: approvals } = await sb.from('interview_approvals_2nd')
-    .select('admin_id, admin_profiles(name)')
-    .eq('application_id', appId);
-  const approvedIds = (approvals||[]).map(a => a.admin_id);
-  const myId = currentAdmin.id;
-  const iAmInterviewer = interviewers.some(i => i.admin_id === myId);
-
-  if (iAmInterviewer && !approvedIds.includes(myId)) {
-    // ★ 평가표 미작성 시 승인(합격) 불가
-    const myEval2 = await getMyEvaluation(appId, 2);
-    if (!myEval2) {
-      showToast('⚠️ 면접 평가표를 먼저 작성해야 합격 처리할 수 있습니다');
-      alert('2차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 합격 처리해 주세요.');
-      window._evalGuardBlocked = true;
-      return;
-    }
-    await sb.from('interview_approvals_2nd').insert({ application_id: appId, admin_id: myId });
-    approvedIds.push(myId);
-    window._cachedApprovals2nd = [...(window._cachedApprovals2nd||[]),
-      { application_id: appId, admin_id: myId, admin_profiles: { name: adminProfile?.name } }];
-    renderPipeline();
+  if (round === 1) {
+    _ivModal(`${name} 1차 면접 합격`,
+      `${linesHtml}<div style="margin-top:12px;color:var(--text)">다음 단계를 선택하세요.</div>`,
+      [{ label: '2차면접 진행', cls: 'btn-primary', onClick: () => moveTo('2차면접', '✓ 2차면접으로 이동했습니다') },
+       { label: '최종합격', cls: 'btn-pass', onClick: () => moveTo('최종합격', '🎉 최종합격 처리되었습니다') },
+       { label: '취소' }]);
+    return;
   }
+  _ivModal(`${name} 최종합격`,
+    `${linesHtml}<div style="margin-top:12px;color:var(--text)">2차 면접 합격 — 최종합격으로 확정합니다.</div>`,
+    [{ label: '최종합격 확정', cls: 'btn-pass', onClick: () => moveTo('최종합격', '🎉 최종합격 처리되었습니다') },
+     { label: '취소' }]);
+}
 
-  const total = interviewers.length;
-  const done = approvedIds.length;
-  const statusLines = interviewers.map(i => {
-    const ok = approvedIds.includes(i.admin_id);
-    const isMe = i.admin_id === myId;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border)">
-      <span style="font-size:16px">${ok?'✅':isMe?'⚠':'⬜'}</span>
-      <span style="font-size:13px">${esc(i.admin_profiles?.name)||'-'}</span>
-      <span style="font-size:11px;color:${ok?'var(--g600)':'var(--text3)'};margin-left:auto">${ok?'승인':'대기'}</span>
+// ── 면접 불합격 통보 (카카오톡, 슈퍼어드민) ───────────────────
+// 불합격 확정 ≠ 발송. 최종합격자 확정 후 [통보 관리]에서 골라서 발송 (문자 대체 없음)
+const REJECT_KAKAO_PREVIEW = `[엘앤티렉서스(주) 채용 결과 안내]
+
+#{이름}님, 안녕하세요.
+엘앤티렉서스(주) #{공고명} 채용에 지원해 주시고
+면접에 참석해 주셔서 진심으로 감사드립니다.
+
+신중히 검토한 결과, 아쉽게도 이번 채용에서는
+함께하지 못하게 되었음을 안내드립니다.
+
+제출하신 지원서류는 개인정보 처리방침에 따라
+안전하게 파기됩니다.
+
+문의: 채용담당자 02-2188-3565
+
+#{이름}님의 앞날에 좋은 일이 가득하길 바랍니다.`;
+
+function _isIvReject(a) { return a && (a.rejected_from_stage === '1차면접' || a.rejected_from_stage === '2차면접'); }
+function _rnTagHtml(a) {
+  const m = {
+    sent:      ['rn-sent',   '카톡 발송'],
+    delivered: ['rn-ok',     '카톡 수신'],
+    failed:    ['rn-fail',   '발송 실패'],
+    manual:    ['rn-manual', '직접 통보'],
+    site:      ['rn-manual', '사이트 안내'],
+  };
+  const [c, t] = m[a.reject_notify_status] || ['rn-wait', '통보 대기'];
+  return `<span class="rn-tag ${c}">${t}</span>`;
+}
+function _rnSendable(a) { return !a.reject_notify_status || a.reject_notify_status === 'failed'; }
+
+function renderRejectNotifyBar(apps) {
+  const bar = document.getElementById('rejectNotifyBar');
+  if (!bar) return;
+  const off = () => { bar.className = 'hidden'; bar.innerHTML = ''; };
+  if (adminProfile?.role !== 'superadmin') return off();
+  const list = (apps || []).filter(a => a.stage === '불합격' && _isIvReject(a));
+  const waiting = list.filter(a => !a.reject_notify_status).length;
+  const failed  = list.filter(a => a.reject_notify_status === 'failed').length;
+  const sent    = list.filter(a => a.reject_notify_status === 'sent').length;
+  if (!waiting && !failed && !sent) return off();
+  const parts = [`면접 불합격 통보 대기 <b>${waiting}명</b>`];
+  if (failed) parts.push(`발송 실패 <b>${failed}명</b>`);
+  if (sent) parts.push(`수신 확인 전 <b>${sent}명</b>`);
+  bar.className = 'rn-bar';
+  bar.innerHTML = `<span>📨 ${parts.join(' · ')}</span>
+    <button class="btn btn-sm" style="margin-left:auto" onclick="openRejectNotify()">통보 관리</button>`;
+}
+
+function _rnList() {
+  const job = document.getElementById('jobFilter')?.value;
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  return allApps
+    .filter(a => a.stage === '불합격' && _isIvReject(a) && (!job || a.job_posting_id === job))
+    // 끝난 건(수신·직접 통보·기존 처리)은 최근 30일만
+    .filter(a => !['delivered', 'manual', 'site'].includes(a.reject_notify_status)
+                 || new Date(a.reject_notified_at || a.rejected_at || 0).getTime() >= cutoff)
+    .sort((x, y) => String(y.rejected_at || '').localeCompare(String(x.rejected_at || '')));
+}
+
+async function openRejectNotify() {
+  if (adminProfile?.role !== 'superadmin') { showToast('슈퍼어드민만 사용할 수 있습니다'); return; }
+  document.getElementById('rejectNotifyModal').classList.remove('hidden');
+  _rnRender();
+  // 발송한 건은 열 때 수신 결과 자동 확인
+  const sentIds = _rnList().filter(a => a.reject_notify_status === 'sent').map(a => a.id);
+  if (sentIds.length) await _rnCall('check', sentIds, true);
+}
+function closeRejectNotify() { document.getElementById('rejectNotifyModal').classList.add('hidden'); }
+
+function _rnRender() {
+  const body = document.getElementById('rnBody');
+  if (!body) return;
+  const list = _rnList();
+  if (!list.length) {
+    body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">통보할 면접 불합격자가 없습니다</div>';
+    _rnSyncBtn();
+    return;
+  }
+  // 최종합격자가 아직 없는 공고 → 차순위 확인 경고
+  const jobIds = [...new Set(list.filter(_rnSendable).map(a => a.job_posting_id))];
+  const noHire = jobIds.filter(jid => !allApps.some(x => x.job_posting_id === jid && x.stage === '최종합격'));
+  const warn = noHire.length ? `<div style="margin-bottom:10px;padding:9px 12px;background:#FEF3E2;border-radius:8px;font-size:12.5px;color:#7A3D00;line-height:1.6">
+      ⚠ 최종합격자가 아직 없는 공고: ${noHire.map(jid => esc(allApps.find(x => x.job_posting_id === jid)?.job_postings?.title || '-')).join(', ')}<br>
+      합격자 입사가 확정됐는지 확인한 뒤 발송하세요. (차순위 후보가 필요할 수 있음)</div>` : '';
+
+  const rows = list.map(a => {
+    const st = a.reject_notify_status;
+    const can = _rnSendable(a);
+    const when = a.reject_notified_at
+      ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">${new Date(a.reject_notified_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>` : '';
+    const err = (st === 'failed' && a.reject_notify_error)
+      ? `<div style="font-size:11px;color:var(--r600);margin-top:2px">${esc(a.reject_notify_error)}</div>` : '';
+    const manualBtn = st === 'failed'
+      ? `<button class="btn btn-sm" style="margin-top:4px" onclick="rnManual('${a.id}')">전화로 통보함</button>` : '';
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 2px;border-bottom:0.5px solid var(--border)">
+      <label style="display:flex;align-items:flex-start;gap:10px;flex:1;min-width:0;cursor:${can ? 'pointer' : 'default'}">
+        <input type="checkbox" class="rn-chk" value="${a.id}" ${can ? (st === 'failed' ? '' : 'checked') : 'disabled'} onchange="_rnSyncBtn()" style="width:16px;height:16px;margin-top:2px;flex-shrink:0">
+        <span style="min-width:0">
+          <span style="display:block;font-size:14px;color:var(--text);font-weight:600">${esc(a.name) || '-'}
+            <span style="font-weight:400;font-size:12px;color:var(--text3)">${esc(a.rejected_from_stage)} 불합격</span></span>
+          <span style="display:block;font-size:12px;color:var(--text2)">${esc(a.job_postings?.title) || '-'}</span>
+        </span>
+      </label>
+      <div style="text-align:right;flex-shrink:0">${_rnTagHtml(a)}${when}${err}${manualBtn}</div>
     </div>`;
   }).join('');
 
-  if (done >= total) {
-    if (adminProfile?.role === 'superadmin') {
-      showConfirm('2차면접 전원 승인 완료 ✅', '최종합격 처리하시겠습니까?', async (yes) => {
-        if (!yes) return;
-        await updateStageById(appId, '최종합격');
-        showToast('🎉 최종합격 처리되었습니다');
-        updateModalStage('최종합격');
-      });
+  body.innerHTML = warn + `<div>${rows}</div>
+    <details style="margin-top:12px"><summary style="cursor:pointer;font-size:12.5px;color:var(--text2)">카톡 문구 미리보기</summary>
+      <pre style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.6;background:var(--surface2);padding:10px 12px;border-radius:8px;margin-top:6px;color:var(--text)">${esc(REJECT_KAKAO_PREVIEW)}</pre></details>
+    <div style="margin-top:8px;font-size:11.5px;color:var(--text3);line-height:1.6">카카오톡만 발송합니다(문자 대체 없음). 발송 실패 시 전화로 안내한 뒤 '전화로 통보함'을 눌러 기록하세요.<br>지원자 화면에는 발송(또는 직접 통보) 시점부터 '불합격'이 표시됩니다.</div>`;
+  _rnSyncBtn();
+}
+function _rnSyncBtn() {
+  const b = document.getElementById('rnSendBtn');
+  if (!b) return;
+  const n = document.querySelectorAll('#rnBody .rn-chk:checked').length;
+  b.textContent = n ? `선택 ${n}명 발송` : '선택 발송';
+}
+
+let _rnBusy = false;
+async function rnSend() {
+  if (_rnBusy) return;
+  const ids = [...document.querySelectorAll('#rnBody .rn-chk:checked')].map(c => c.value);
+  if (!ids.length) { showToast('발송할 지원자를 선택해 주세요'); return; }
+  if (!confirm(`${ids.length}명에게 불합격 안내 카카오톡을 발송합니다.\n발송 후에는 취소할 수 없습니다. 진행할까요?`)) return;
+  await _rnCall('send', ids);
+}
+async function rnRefresh() {
+  const ids = _rnList().filter(a => a.reject_notify_status === 'sent').map(a => a.id);
+  if (!ids.length) { showToast('수신 결과를 확인할 발송 건이 없습니다'); return; }
+  await _rnCall('check', ids);
+}
+async function rnManual(id) {
+  const a = allApps.find(x => x.id === id);
+  if (!confirm(`${a?.name || '지원자'}님에게 전화 등으로 불합격을 직접 안내하셨나요?\n'직접 통보'로 기록합니다.`)) return;
+  await _rnCall('manual', [id]);
+}
+
+async function _rnCall(action, ids, quiet) {
+  if (_rnBusy) return;
+  _rnBusy = true;
+  const btn = document.getElementById('rnSendBtn');
+  if (btn) btn.textContent = '처리 중...';
+  let res = null, out = {};
+  try {
+    const { data: _s } = await sb.auth.getSession();
+    res = await fetch(SUPABASE_URL + '/functions/v1/send-reject-alimtalk', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + SUPABASE_KEY, 'apikey': SUPABASE_KEY, 'x-caller-token': _s?.session?.access_token || '' },
+      body: JSON.stringify({ action, applicationIds: ids })
+    });
+    try { out = await res.json(); } catch (e) {}
+  } catch (e) {
+    _rnBusy = false;
+    _rnSyncBtn();
+    if (!quiet) alert('네트워크 오류로 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    return;
+  }
+  // 최신 통보 상태 반영
+  try {
+    const { data: fresh } = await sb.from('applications')
+      .select('id, reject_notify_status, reject_notified_at, reject_notify_error, reject_notify_count').in('id', ids);
+    (fresh || []).forEach(f => { const a = allApps.find(x => x.id === f.id); if (a) Object.assign(a, f); });
+  } catch (e) {}
+  _rnBusy = false;
+  renderPipeline();
+  _rnRender();
+
+  if (!res.ok || !out.ok) {
+    if (quiet) return;
+    if (out.code === 'not_configured') {
+      alert('불합격 안내 알림톡이 아직 설정되지 않았습니다.\n\n카카오 템플릿 검수 승인 후 Supabase Secret(SOLAPI_TEMPLATE_ID_REJECT)을 등록해 주세요.');
     } else {
-      showToast('✓ 2차면접 전원 승인 완료! 슈퍼어드민이 최종합격 처리합니다');
+      alert('처리하지 못했습니다: ' + (out.error || ('오류 ' + res.status)));
     }
-  } else {
-    showConfirm(`2차면접 승인 현황 (${done}/${total})`, '', null);
-    document.getElementById('confirmSub').innerHTML = `<div style="margin-top:8px">${statusLines}</div>`;
-    document.getElementById('confirmYes').style.display = 'none';
-    document.getElementById('confirmNo').textContent = '닫기';
-    document.getElementById('confirmNo').onclick = () => closeConfirmModal();
-    if (iAmInterviewer) showToast('✓ 2차면접 승인 완료했습니다');
+    return;
+  }
+  const rs = out.results || [];
+  const nm = id => allApps.find(a => a.id === id)?.name || '-';
+  if (action === 'send') {
+    const ok = rs.filter(r => r.ok).length, ng = rs.length - ok;
+    showToast(`카톡 발송 ${ok}명${ng ? ` · 실패 ${ng}명` : ''}`);
+    if (ng) alert(`발송하지 못한 지원자가 있습니다.\n\n${rs.filter(r => !r.ok).map(r => `· ${nm(r.id)}: ${r.error}`).join('\n')}\n\n전화로 안내한 뒤 '전화로 통보함'을 눌러 기록하세요.`);
+  } else if (action === 'check') {
+    const d = rs.filter(r => r.status === 'delivered').length;
+    const f = rs.filter(r => r.status === 'failed').length;
+    const p = rs.filter(r => r.status === 'sent').length;
+    if (!quiet || f) showToast(`수신 완료 ${d} · 실패 ${f} · 확인 중 ${p}`);
+  } else if (action === 'manual') {
+    showToast('직접 통보로 기록했습니다');
   }
 }
 
 async function failApplicant() {
-  // ★ 면접 단계에서는 평가표 작성 후에만 불합격 처리 가능
-  //   - 내가 그 라운드 면접관이면: 내 평가표 필수
-  //   - 면접관이 아니면(관리자): 해당 라운드 평가표가 최소 1건 있어야 함
+  // ★ 면접 단계(1차/2차): 면접관은 '불합격 의견'(평가표 필수), 최종 불합격은 슈퍼어드민이
+  //   면접관 전원 의견을 확인한 뒤 확정 → 카톡은 '통보 관리'에서 따로 발송
   const app = allApps.find(a => a.id === currentAppId);
   const stage = app?.stage;
   // ★ 검토 단계(지원완료/관리자검토)의 불합격은 서류검토 담당자(접근 권한) 또는 슈퍼어드민만
@@ -2465,27 +2728,8 @@ async function failApplicant() {
     if (!perm) { showToast('서류검토 담당자만 검토 단계 불합격 처리를 할 수 있습니다'); return; }
   }
   if (app && (stage === '1차면접' || stage === '2차면접')) {
-    const round = stage === '2차면접' ? 2 : 1;
-    const ivTable = round === 2 ? 'job_interviewers_2nd' : 'job_interviewers';
-    const { data: ivs } = await sb.from(ivTable).select('admin_id').eq('job_id', app.job_posting_id);
-    const iAmInterviewer = (ivs || []).some(i => i.admin_id === currentAdmin.id);
-    if (iAmInterviewer) {
-      const myEval = await getMyEvaluation(currentAppId, round);
-      if (!myEval) {
-        showToast('⚠️ 면접 평가표를 먼저 작성해야 불합격 처리할 수 있습니다');
-        alert(`${round}차 면접 평가표가 아직 작성되지 않았습니다.\n\n[면접 진행] 화면에서 이 지원자의 평가표를 작성한 뒤 불합격 처리해 주세요.`);
-        window._evalGuardBlocked = true;
-        return;
-      }
-    } else {
-      const anyEval = await hasAnyEvaluation(currentAppId, round);
-      if (!anyEval) {
-        showToast('⚠️ 면접 평가표가 1건도 없어 불합격 처리할 수 없습니다');
-        alert(`${round}차 면접 평가표가 아직 1건도 작성되지 않았습니다.\n\n면접관이 평가표를 작성한 뒤 불합격 처리해 주세요.`);
-        window._evalGuardBlocked = true;
-        return;
-      }
-    }
+    await handleInterviewOpinion(currentAppId, app, stage === '2차면접' ? 2 : 1, 'fail');
+    return;
   }
   // ★ 서류 검토 단계 → 불합격 사유(다중 선택) 입력 후 처리
   if (app && DOC_REVIEW_STAGES.includes(stage || '지원완료')) {
@@ -2662,6 +2906,8 @@ function updateModalStage(stage) {
   document.getElementById('mCurrentStage').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${stage}</span>`;
   document.getElementById('mBadges').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${stage}</span>`;
   renderRejectReasons(allApps.find(a => a.id === currentAppId));
+  _syncDecisionLabels(stage);
+  _renderModalOpinions(allApps.find(a => a.id === currentAppId));
 }
 
 // ── 최종합격자 입사 안내 메일 ─────────────────────────────────
@@ -2920,6 +3166,8 @@ async function openModal(id) {
   document.getElementById('mBadges').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${esc(app.stage)||'지원완료'}</span>${(app.apply_source||[]).map(s=>`<span class="stage-badge" style="background:var(--surface2);color:var(--text2)">${esc(s)}</span>`).join('')}`;
   document.getElementById('mCurrentStage').innerHTML = `<span class="stage-badge" style="background:${stageInfo.bg};color:${stageInfo.textColor}">${app.stage||'지원완료'}</span>`;
   renderRejectReasons(app);
+  _syncDecisionLabels(app.stage || '지원완료');
+  _renderModalOpinions(app);
   // 만나이 계산
   const calcAge = (birth) => {
     if (!birth) return '';
@@ -5863,8 +6111,9 @@ async function renderInterviewSession(app) {
   const memoHtml = _ivMemoBoxHtml(notes);
 
   // 합격/불합격 버튼
-  const passBtn = `<button class="iv-pass-btn" style="background:#EAF3DE;color:#27500A" onclick="ivDecision('pass')">✅ 합격</button>`;
-  const failBtn = `<button class="iv-pass-btn" style="background:#FCEBEB;color:#A32D2D" onclick="ivDecision('fail')">❌ 불합격</button>`;
+  const _dSfx = adminProfile?.role === 'superadmin' ? ' 확정' : ' 의견';
+  const passBtn = `<button class="iv-pass-btn" style="background:#EAF3DE;color:#27500A" onclick="ivDecision('pass')">✅ 합격${_dSfx}</button>`;
+  const failBtn = `<button class="iv-pass-btn" style="background:#FCEBEB;color:#A32D2D" onclick="ivDecision('fail')">❌ 불합격${_dSfx}</button>`;
 
   const ev = myEval || {};
 
@@ -6233,25 +6482,19 @@ async function ivDecision(decision) {
   const app = allApps.find(a => a.id === _ivSessionAppId);
   const name = app?.name || '지원자';
   const label = decision === 'pass' ? '합격' : '불합격';
-  const color = decision === 'pass' ? '#27500A' : '#A32D2D';
-
-  showConfirm(`${name} - ${label} 처리`, `${_ivSessionRound}차 면접 ${label} 처리하시겠습니까?`, async (yes) => {
-    if (!yes) return;
-    window._evalGuardBlocked = false; // 평가표 미작성 가드에 걸렸는지 확인용
-    if (decision === 'pass') {
-      await passApplicant();
-    } else {
-      await failApplicant();
-    }
-    // 평가표 미작성으로 막힌 경우: 면접 진행 화면 그대로 유지 (목록으로 되돌아가지 않음)
+  const run = async () => {
+    window._evalGuardBlocked = false; // 막히거나 확정 창이 열리면 true → 면접 진행 화면 유지
+    if (decision === 'pass') await passApplicant(); else await failApplicant();
     if (window._evalGuardBlocked) { window._evalGuardBlocked = false; return; }
-    // allApps + 승인캐시 갱신 후 대시보드/파이프라인 연동
     await loadApplications();
-    await loadDashboard(); // loadApplications 완료 후 호출해야 캐시 반영됨
-    // 면접 진행 목록으로 복귀
+    await loadDashboard();
     showPage('interviewroom', null);
     await loadInterviewRoom();
-    showToast(`✓ ${name} ${label} 처리 완료`);
+  };
+  // 슈퍼어드민은 확정 창에서 한 번만 확인
+  if (adminProfile?.role === 'superadmin') { await run(); return; }
+  showConfirm(`${name} - ${label} 의견`, `${_ivSessionRound}차 면접 ${label} 의견을 남기시겠습니까?`, async (yes) => {
+    if (yes) await run();
   });
 }
 
