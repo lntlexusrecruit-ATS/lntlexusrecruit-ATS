@@ -2299,7 +2299,7 @@ async function passApplicant() {
 
 // ── 면접 의견(합격/불합격) → 슈퍼어드민 최종 확정 ─────────────
 // 면접관: 합격/불합격 '의견'만 남김 (평가표 필수, 바꿀 수 있음)
-// 슈퍼어드민: 해당 라운드 면접관 전원이 의견을 남겨야 합격/불합격 확정 가능
+// 슈퍼어드민: 면접관 전원 의견 후 확정이 기본, 미완료여도 '직권'으로 확정 가능 (2026-11-16)
 // 불합격 확정해도 카톡은 자동 발송 안 함 → 파이프라인 상단 [통보 관리]에서 발송
 var IV_OP = {
   1: { iv: 'job_interviewers',     op: 'interview_approvals' },
@@ -2421,8 +2421,11 @@ async function handleInterviewOpinion(appId, app, round, decision) {
   let ops = await _loadOpinions(round, appId);
   if (!ops) { showToast('면접관 의견을 불러오지 못했습니다'); window._evalGuardBlocked = true; return; }
 
+  // 슈퍼어드민이 면접관이기도 한데 평가표가 없으면 → 내 의견 없이 확정 단계로 (2026-11-16)
+  const _superNoEval = isSuper && iAmInterviewer && !(await getMyEvaluation(appId, round));
+
   // 1) 면접관이면 내 의견 저장(또는 변경) — 평가표 필수
-  if (iAmInterviewer) {
+  if (iAmInterviewer && !_superNoEval) {
     const mine = ops.find(o => o.admin_id === myId);
     if (!mine || _opDecision(mine) !== decision) {
       const myEval = await getMyEvaluation(appId, round);
@@ -2465,11 +2468,14 @@ async function handleInterviewOpinion(appId, app, round, decision) {
     return;
   }
 
-  // 3) 슈퍼어드민: 면접관 전원 의견이 있어야 확정
+  // 3) 슈퍼어드민: 면접관 의견이 다 없어도 '직권'으로 확정 가능 (2026-11-16)
+  //    예) 면접 전에 다른 지원자가 합격해 불합격 처리해야 하는 경우
   if (done < total) {
-    _ivModal(`면접관 의견 대기 (${done}/${total})`,
-      `${lines}<div style="margin-top:12px;font-size:12.5px;color:var(--r600)">면접관 전원이 의견을 남겨야 확정할 수 있습니다.</div>`,
-      [{ label: '닫기' }]);
+    _ivModal(`면접관 의견 ${done}/${total} — 직권 ${label}`,
+      `${lines}<div style="margin-top:12px;font-size:12.5px;color:var(--r600)">아직 의견을 남기지 않은 면접관이 있습니다.<br>슈퍼어드민 권한으로 바로 ${label} 처리할 수 있습니다. (접속기록에 '직권'으로 남습니다)</div>`
+      + (decision === 'fail' ? `<div style="margin-top:8px;font-size:12px;color:var(--text3)">면접을 보지 않은 지원자라면 카카오톡 문구("면접에 참석해 주셔서…")가 맞지 않습니다. [통보 관리]에서 전화 안내 후 '전화로 통보함'으로 기록하세요.</div>` : ''),
+      [{ label: `직권 ${label} 진행`, cls: decision === 'fail' ? 'btn-fail' : 'btn-primary', onClick: () => _ivFinalConfirm(appId, app, round, decision, lines, true) },
+       { label: '취소' }]);
     window._evalGuardBlocked = true;
     return;
   }
@@ -2487,12 +2493,12 @@ async function _afterFinalDecision() {
   }
 }
 
-function _ivFinalConfirm(appId, app, round, decision, linesHtml) {
+function _ivFinalConfirm(appId, app, round, decision, linesHtml, forced) {
   window._evalGuardBlocked = true; // 확정 창에서 결정 → 화면 갱신은 확정 후에
   const name = app.name || '지원자';
   const moveTo = async (stage, toastMsg) => {
     if (!(await updateStageById(appId, stage))) return;
-    logAudit(`${round}차 면접 ${stage === '불합격' ? '불합격' : '합격'} 확정(→${stage})`, 'application', appId, app.name);
+    logAudit(`${round}차 면접 ${stage === '불합격' ? '불합격' : '합격'} 확정(→${stage}${forced ? '·직권' : ''})`, 'application', appId, app.name);
     showToast(toastMsg);
     if (currentAppId === appId) updateModalStage(stage);
     await _afterFinalDecision();
