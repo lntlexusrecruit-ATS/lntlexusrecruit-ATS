@@ -2621,15 +2621,19 @@ function _rnRender() {
       ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">${new Date(a.reject_notified_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>` : '';
     const err = (st === 'failed' && a.reject_notify_error)
       ? `<div style="font-size:11px;color:var(--r600);margin-top:2px">${esc(a.reject_notify_error)}</div>` : '';
-    const manualBtn = st === 'failed'
+    // 발송 전·발송 실패 건 모두 '전화로 통보함' 가능 (2026-11-16)
+    const manualBtn = can
       ? `<button class="btn btn-sm" style="margin-top:4px" onclick="rnManual('${a.id}')">전화로 통보함</button>` : '';
+    // 면접 일정 기록이 없는 지원자(면접 전 불합격) → 카톡 문구가 맞지 않으므로 기본 선택 해제 + 표시
+    const noIv = !a.interview_date;
+    const noIvTag = (can && noIv) ? `<span style="display:block;font-size:11.5px;color:#B25C00;margin-top:2px">면접 기록 없음 — 전화 통보 권장</span>` : '';
     return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 2px;border-bottom:0.5px solid var(--border)">
       <label style="display:flex;align-items:flex-start;gap:10px;flex:1;min-width:0;cursor:${can ? 'pointer' : 'default'}">
-        <input type="checkbox" class="rn-chk" value="${a.id}" ${can ? (st === 'failed' ? '' : 'checked') : 'disabled'} onchange="_rnSyncBtn()" style="width:16px;height:16px;margin-top:2px;flex-shrink:0">
+        <input type="checkbox" class="rn-chk" value="${a.id}" ${can ? ((st === 'failed' || noIv) ? '' : 'checked') : 'disabled'} onchange="_rnSyncBtn()" style="width:16px;height:16px;margin-top:2px;flex-shrink:0">
         <span style="min-width:0">
           <span style="display:block;font-size:14px;color:var(--text);font-weight:600">${esc(a.name) || '-'}
             <span style="font-weight:400;font-size:12px;color:var(--text3)">${esc(a.rejected_from_stage)} 불합격</span></span>
-          <span style="display:block;font-size:12px;color:var(--text2)">${esc(a.job_postings?.title) || '-'}</span>
+          <span style="display:block;font-size:12px;color:var(--text2)">${esc(a.job_postings?.title) || '-'}</span>${noIvTag}
         </span>
       </label>
       <div style="text-align:right;flex-shrink:0">${_rnTagHtml(a)}${when}${err}${manualBtn}</div>
@@ -2665,7 +2669,20 @@ async function rnRefresh() {
 async function rnManual(id) {
   const a = allApps.find(x => x.id === id);
   if (!confirm(`${a?.name || '지원자'}님에게 전화 등으로 불합격을 직접 안내하셨나요?\n'직접 통보'로 기록합니다.`)) return;
-  await _rnCall('manual', [id]);
+  await _rnCall('manual', [id], true);
+  if (allApps.find(x => x.id === id)?.reject_notify_status === 'manual') { showToast('직접 통보로 기록했습니다'); return; }
+  // 서버 함수가 '발송 전' 건을 받지 않는 경우 → 슈퍼어드민 권한으로 직접 기록 (2026-11-16)
+  const { data, error } = await sb.from('applications')
+    .update({ reject_notify_status: 'manual', reject_notified_at: new Date().toISOString() })
+    .eq('id', id).eq('stage', '불합격')
+    .select('id, reject_notify_status, reject_notified_at, reject_notify_error, reject_notify_count');
+  if (error || !data?.length) { alert('기록하지 못했습니다: ' + (error?.message || 'DB 권한을 확인해 주세요')); return; }
+  const cur = allApps.find(x => x.id === id);
+  if (cur) Object.assign(cur, data[0]);
+  logAudit('면접 불합격 직접 통보 기록', 'application', id, a?.name);
+  renderPipeline();
+  _rnRender();
+  showToast('직접 통보로 기록했습니다');
 }
 
 async function _rnCall(action, ids, quiet) {
